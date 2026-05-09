@@ -4,85 +4,110 @@
 
 ```
 Browser (Reviewer)
-  ├─ Payload UI (Rails+JS)
+  ├─ Payload UI (Next.js App Router + React)
+  ├─ EventSource stream for session-ready updates
   └─ <iframe> Guacamole client (auto-auth token)
          │
          │ HTTPS + WSS
          ▼
-  ┌──────────────────────┐
-  │ Rails app (Payload)  │ ◄── Hack Club OIDC login
-  │ • REST API for VMs  │     REST calls to Proxmox + Guacamole
-  │ • Solid Queue jobs  │
-  └──────┬───────────────┘
-         │
-    ┌────┴────────────┐
-    │                 │
-    ▼                 ▼
+  ┌─────────────────────────────┐
+  │ Next.js app (Payload)       │ ◄── Hack Club OIDC login
+  │ • App Router pages/actions  │
+  │ • Route handlers / API      │     REST calls to Proxmox + Guacamole
+  │ • In-process BullMQ worker  │     BullMQ jobs via Redis
+  └──────┬──────────────┬───────┘
+         │              │
+         ▼              ▼
+   ┌──────────┐    ┌────────┐
+   │Postgres  │    │Redis   │
+   │app data  │    │queues  │
+   └────┬─────┘    └────────┘
+        │
+    ┌───┴────────────┐
+    │                │
+    ▼                ▼
 ┌─────────┐   ┌─────────────────────────────┐
-│Proxmox  │   │ Guacamole stack (LXC)      │
+│Proxmox  │   │ Guacamole stack (LXC)       │
 │cluster  │   │ • guacamole webapp + Tomcat │
-│         │   │ • guacd daemon (VNC/RDP)     │
-│ templates     │ • Postgres (auth store)   │
-│ VMs      │   └─────────────────────────────┘
-└─────────┘         │
+│templates│   │ • guacd daemon (VNC/RDP)    │
+│VMs      │   │ • Postgres (auth store)     │
+└─────────┘   └─────────────────────────────┘
+                     │
                      │ LAN VNC/RDP
                      ▼
               ┌──────────────┐
               │ Ephemeral VMs│
-              │ Win/Lin/And/Mac
+              │ Linux in v1  │
               └──────────────┘
 ```
 
 ## Components
 
-### 1. Rails app
+### 1. Next.js app
 
-- Brain. Speaks to user, Proxmox, and Guacamole.
-- Handles OIDC login, allowlist enforcement, VM CRUD, heartbeat ingest,
-  idle/TTL reaping (Solid Queue).
-- Stateless web tier; all state in Postgres.
+- Brain. Speaks to reviewers, Proxmox, Guacamole, Postgres, and Redis.
+- Uses App Router for UI routes and Route Handlers for API endpoints.
+- Handles Auth.js login, Slack-ID allowlist enforcement, VM CRUD, heartbeat
+  ingest, server-sent events, and BullMQ job processing.
+- Runs as one Docker container for now. The BullMQ worker is started in-process
+  during runtime, guarded so it does not start during builds or migrations.
 
 ### 2. Postgres
 
-- Single Postgres database. Solid Queue/Cache/Cable tables alongside app tables.
-- Guacamole runs its own separate Postgres (do NOT share).
+- Primary application database.
+- Drizzle schema and SQL migrations are the source of truth for app tables.
+- Guacamole runs its own separate Postgres database. Do not share.
 
-### 3. Reverse proxy — Caddy
+### 3. Redis
 
-- Single public hostname (`payload.hackclub.com`).
+- Required by BullMQ.
+- Stores job queues, delayed jobs, retries, and scheduled reaper jobs.
+- v1 deployment should run Redis alongside the app and Postgres.
+
+### 4. Reverse proxy
+
+- Single public hostname: `payload.hackclub.com`.
 - Path routing:
-  - `/` → Rails
-  - `/guac/*` → Guacamole webapp (iframe `src` lives here)
-  - `/cable` → Rails ActionCable
+  - `/` -> Next.js app
+  - `/api/*` -> Next.js route handlers
+  - `/guac/*` -> Guacamole webapp
+- Caddy is still a good default because TLS and path routing are simple, but the
+  app itself is only responsible for producing a Docker image.
 
-### 4. Guacamole stack
+### 5. Guacamole stack
 
-- Runs as LXC on Proxmox cluster.
-- `guacd` — protocol daemon, speaks VNC/RDP to VMs over LAN.
-- `guacamole` (Tomcat) — REST API + iframe-embeddable client UI.
+- Runs as LXC on the Proxmox cluster.
+- `guacd` speaks VNC/RDP to VMs over LAN.
+- `guacamole` (Tomcat) exposes REST API + iframe-embeddable client UI.
 - Backed by its own Postgres for JDBC auth extension.
 
-### 5. Proxmox cluster
+### 6. Proxmox cluster
 
-- One node minimum. Hosts VM templates, Guacamole LXC, (optionally) Rails+Postgres.
-- Rails calls Proxmox API over HTTPS using API token.
+- One node minimum.
+- Hosts VM templates, Guacamole LXC, and ephemeral VMs.
+- Payload calls Proxmox API over HTTPS using an API token.
 
 ## Data flow: reviewer creates a VM
 
 1. Reviewer clicks "Spawn Linux".
-2. Rails checks: user in allowlist? <2 active VMs?
-3. Rails calls Proxmox API: clone template → new vmid, then start.
-4. Rails polls `qemu-guest-agent` until VM reports IP (timeout ~120s).
-5. Rails calls Guacamole REST: create connection row + issue auth token.
-6. Rails renders session page with `<iframe src="/guac/#/client/<id>?token=…">`.
-7. Browser sends heartbeat every 30s.
-8. Reaper job runs every minute: terminate on 30min idle OR 6h TTL.
+2. Next.js server action or route handler checks: user in allowlist, user has
+   fewer than 2 active VMs, VM type enabled.
+3. App inserts a `vm_sessions` row and enqueues a BullMQ `provision-vm` job.
+4. Worker clones the template in Proxmox, starts it, and polls qemu-guest-agent
+   until the VM reports an IP address.
+5. Worker creates the Guacamole user + connection, then marks the session ready.
+6. Browser receives a server-sent event and swaps the provisioning screen for the
+   Guacamole iframe.
+7. Browser sends heartbeat with `fetch` every 30 seconds while the tab is usable.
+8. Reaper job runs every minute and enqueues termination for idle, expired, or
+   stuck sessions.
 
 ## Security boundaries
 
-- Public internet → only Caddy (ports 80/443).
-- Proxmox API, Guacamole REST, VM VNC/RDP → private LAN/VLAN. Only Rails and
-  Guacamole can reach them.
-- Per-VM credentials: each cloned VM gets fresh VNC/RDP password.
-- Guacamole tokens: short TTL (15 min default), bound to single connection.
-- Slack-ID allowlist: enforced server-side on every authenticated request.
+- Public internet reaches only the reverse proxy on ports 80/443.
+- Proxmox API, Guacamole REST, Redis, Postgres, and VM VNC/RDP stay on private
+  LAN/VLAN networks.
+- Per-VM credentials are generated per session and encrypted at rest with
+  AES-256-GCM using an app secret from env.
+- Guacamole tokens are short-lived and bound to a one-shot Guacamole user.
+- Slack-ID allowlist is enforced server-side on every authenticated VM action.

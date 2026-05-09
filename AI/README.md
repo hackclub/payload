@@ -15,7 +15,7 @@ hours** (hard cap) or **30 minutes** of browser inactivity, whichever comes firs
 1. [overview.md](./overview.md) — product scope, users, non-goals
 2. [architecture.md](./architecture.md) — system diagram and component responsibilities
 3. [tech-stack.md](./tech-stack.md) — chosen technologies and version pins
-4. [domain-model.md](./domain-model.md) — Postgres schema and Rails models
+4. [domain-model.md](./domain-model.md) — Postgres schema and Drizzle models
 5. [vm-lifecycle.md](./vm-lifecycle.md) — provisioning, heartbeat, reaping
 6. [integrations/hackclub-oidc.md](./integrations/hackclub-oidc.md)
 7. [integrations/proxmox.md](./integrations/proxmox.md)

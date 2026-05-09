@@ -3,60 +3,88 @@
 ## State machine
 
 ```
-pending → provisioning → ready → active
-                ↓              ↓
-           terminating → terminated
-                ↓
-            errored
+pending -> provisioning -> ready -> active
+                |             |
+                v             v
+           terminating -> terminated
+                |
+                v
+             errored
 ```
 
 ## Step-by-step
 
 ### 1. Create
 
-- Trigger: `POST /sessions` with `vm_type_slug`.
-- Guards: user in allowlist, user has <2 active VMs, VmType enabled.
-- DB: `INSERT vm_sessions (state: pending, expires_at: now + 6h)`.
-- Response: 201 with session id; UI shows "provisioning..." splash.
+- Trigger: `POST /api/sessions` or a server action with `vm_type_slug`.
+- Guards: user in allowlist, user has fewer than 2 active VMs, VM type enabled.
+- Use a Postgres transaction and advisory lock keyed by user id to prevent
+  double-click races.
+- DB: insert `vm_sessions` with `state = pending` and `expires_at = now + 6h`.
+- Queue: add BullMQ job `provision-vm` with `{ sessionId }`.
+- Response: 201 with session id; UI shows provisioning screen and opens SSE
+  stream for updates.
 
-### 2. Provision (Solid Queue job — ProvisionVmJob)
+### 2. Provision (BullMQ job: `provision-vm`)
 
-1. `state: pending → provisioning`.
-2. Generate per-VM credential (32-byte random, encoded for VNC/RDP).
-3. **Proxmox**:
+1. Transition `pending -> provisioning`.
+2. Generate per-VM credential with `crypto.randomBytes(32)` and encrypt it with
+   AES-256-GCM before writing to Postgres.
+3. Proxmox:
+   - `GET /cluster/nextid`.
    - `POST /nodes/{node}/qemu/{template_vmid}/clone` with fresh `newid`.
-   - Wait for clone task to finish (poll task status).
+   - Poll task status until clone completes.
    - Inject credential via cloud-init.
+   - Regenerate cloud-init drive.
    - `POST /nodes/{node}/qemu/{vmid}/status/start`.
-4. **Wait for IP** via `qemu-guest-agent`:
-   - Poll `GET /nodes/{node}/qemu/{vmid}/agent/network-get-interfaces` until
-     non-loopback IPv4 appears or 120s timeout.
-5. **Guacamole**:
+4. Wait for IP via `qemu-guest-agent`:
+   - Poll `GET /nodes/{node}/qemu/{vmid}/agent/network-get-interfaces`.
+   - Return first non-loopback IPv4.
+   - Timeout after about 120 seconds.
+5. Guacamole:
    - Create one-shot user `payload-{session_id}` with random password.
-   - Create connection with `hostname=vm_ip`, `port=...`, credentials.
-   - Grant user permission to use this connection.
-6. `state: provisioning → ready`. Persist proxmox_vmid, vm_ip,
-   guacamole_connection_id, guacamole_username.
-7. ActionCable broadcast `session_ready` → UI swaps splash for iframe.
+   - Create connection with `hostname = vm_ip`, port, protocol, and credentials.
+   - Grant that user permission to use the connection.
+6. Transition `provisioning -> ready`, persist `proxmox_vmid`, `vm_ip`,
+   `guacamole_connection_id`, and encrypted Guacamole password.
+7. Publish session-ready notification for SSE subscribers.
 
-On error: `state: errored`, log to vm_session_events, kick cleanup job.
+On error: log to `vm_session_events`, mark `errored`, and enqueue
+`terminate-vm` with reason `error` if any external resource was created.
 
 ### 3. Connect
 
-- UI requests fresh Guacamole token (`POST /sessions/:id/guac_token`).
-- Server calls Guacamole API, returns authToken + base64 connection identifier.
-- UI renders `<iframe src="/guac/#/client/{base64_id}?token={token}">`.
-- UI starts heartbeat loop.
+- UI requests a fresh Guacamole token: `POST /api/sessions/:id/guac-token`.
+- Server decrypts the one-shot Guacamole password, calls Guacamole `/api/tokens`,
+  and returns auth token + base64 connection identifier.
+- UI renders:
+
+```html
+<iframe src="/guac/#/client/{base64_id}?token={token}"></iframe>
+```
+
+- UI starts heartbeat loop after the iframe appears.
 
 ### 4. Heartbeat
 
-- Mechanism: `POST /sessions/:id/heartbeat` every 30s while tab visible.
-- Server: `update_columns(last_heartbeat_at: Time.current)`.
-- State transitions `ready → active` on first heartbeat.
-- Why parent window? Guacamole iframe is cross-origin; heartbeat lives in our
-  own UI for simplicity.
+- Mechanism: `POST /api/sessions/:id/heartbeat` every 30 seconds while the tab is
+  visible and the session page is mounted.
+- Server updates `last_heartbeat_at`.
+- First heartbeat transitions `ready -> active`.
+- Heartbeat stays in the parent Payload UI because the Guacamole iframe is not a
+  trustworthy app-control surface.
 
-### 5. Reap (ReapVmSessionsJob, every 1 minute)
+### 5. SSE status stream
+
+- Endpoint: `GET /api/sessions/:id/events`.
+- Sends `ready`, `errored`, `terminating`, and `terminated` events.
+- Implementation can start with an in-memory subscriber map because v1 runs one
+  app container. Before horizontal scaling, replace this with Redis pub/sub or
+  polling.
+
+### 6. Reap (BullMQ scheduled job: `reap-vm-sessions`)
+
+Run every 60 seconds. BullMQ should use Job Schedulers for recurring work.
 
 ```sql
 -- TTL reaper
@@ -69,33 +97,35 @@ SELECT id FROM vm_sessions
  WHERE state = 'active'
    AND last_heartbeat_at <= now() - interval '30 minutes';
 
--- Stuck-provisioning reaper
+-- Stuck provisioning reaper
 SELECT id FROM vm_sessions
  WHERE state IN ('pending','provisioning')
    AND created_at <= now() - interval '10 minutes';
 ```
 
-For each, enqueue `TerminateVmJob(session, reason:)`.
+For each row, enqueue `terminate-vm` with reason `ttl`, `idle`, or `stuck`.
 
-### 6. Terminate (TerminateVmJob)
+### 7. Terminate (BullMQ job: `terminate-vm`)
 
-1. `state → terminating`.
-2. **Guacamole**: delete connection + delete user (idempotent — treat 404 as success).
-3. **Proxmox**:
-   - `POST /nodes/{node}/qemu/{vmid}/status/stop` (force).
+1. Transition to `terminating` unless already `terminated`.
+2. Guacamole: delete connection and delete one-shot user. Treat 404 as success.
+3. Proxmox:
+   - `POST /nodes/{node}/qemu/{vmid}/status/stop`.
    - `DELETE /nodes/{node}/qemu/{vmid}?purge=1`.
-4. `state → terminated`, `terminated_at: now`, set `termination_reason`.
+4. Transition to `terminated`, set `terminated_at` and `termination_reason`.
 
-Idempotency: every step safe to retry. Use find-or-initialize-style checks.
+Idempotency: every step must be safe to retry. Prefer "check current state, then
+act" over assuming a previous attempt left the world clean.
 
 ## End-user controls
 
-- **Destroy button** → `DELETE /sessions/:id` → enqueues TerminateVmJob.
-- **Time remaining** display (countdown to `min(expires_at, idle_deadline_at)`).
-- **Warning toast** at 10 min and 1 min remaining.
+- **Destroy button** -> `DELETE /api/sessions/:id` -> enqueue `terminate-vm`.
+- **Time remaining** display counts down to `min(expires_at, idle_deadline_at)`.
+- **Warning toast** at 10 minutes and 1 minute remaining.
 
 ## Limits
 
-- Per-user cap: enforced via row count with Postgres advisory lock (prevents
-  double-click race).
-- Global cap: not in v1, but add `PAYLOAD_MAX_GLOBAL_SESSIONS` config before launch.
+- Per-user cap: 2 active sessions, enforced inside a transaction with advisory
+  lock.
+- Global cap: not in v1, but add `PAYLOAD_MAX_GLOBAL_SESSIONS` before launch if
+  Proxmox capacity is tight.

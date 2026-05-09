@@ -2,15 +2,15 @@
 
 ## Symptom
 
-A `vm_session` row is `terminated`/`errored` but Proxmox VM still exists,
-or vice versa.
+A `vm_sessions` row is `terminated` or `errored` but the Proxmox VM still
+exists, or a live row points to a VM that no longer exists.
 
 ## Diagnose
 
-From Rails console on production:
+List live Payload sessions from the app:
 
-```ruby
-VmSession.where(state: %w[ready active]).pluck(:id, :proxmox_vmid, :proxmox_node)
+```bash
+pnpm payload sessions:list-live
 ```
 
 Cross-check against Proxmox:
@@ -29,20 +29,29 @@ pvesh create /nodes/{node}/qemu/{vmid}/status/stop
 pvesh delete /nodes/{node}/qemu/{vmid} --purge 1
 ```
 
+If a Guacamole user or connection also exists, delete it through the admin UI or
+the Payload cleanup script:
+
+```bash
+pnpm payload guac:delete-session-artifacts <session-id>
+```
+
 ### B. Session row says ready/active but VM is gone
 
-```ruby
-session = VmSession.find(<id>)
-session.update!(state: "terminated", terminated_at: Time.current,
-              termination_reason: "error")
-Guacamole.client.delete_connection(session.guacamole_connection_id) rescue nil
-Guacamole.client.delete_user(session.guacamole_username) rescue nil
+```bash
+pnpm payload sessions:mark-terminated <session-id> --reason error
+pnpm payload guac:delete-session-artifacts <session-id>
 ```
 
 ### C. Stuck in terminating
 
-Re-enqueue the terminate job:
+Re-enqueue termination:
 
-```ruby
-TerminateVmJob.perform_later(VmSession.find(<id>), reason: "admin")
+```bash
+pnpm payload sessions:terminate <session-id> --reason admin
 ```
+
+## Notes
+
+All cleanup commands should be idempotent. If they are not, fix the command
+before relying on this runbook in production.

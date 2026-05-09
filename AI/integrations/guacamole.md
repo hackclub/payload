@@ -1,15 +1,14 @@
 # Apache Guacamole Integration
 
-We use Guacamole as the protocol gateway. Reviewers never see Guacamole's
-login screen — Rails creates connections + tokens via REST API and embeds the
-client UI in an iframe with a query-string token.
+Payload uses Guacamole as the protocol gateway. Reviewers never see
+Guacamole's login screen. The Next.js app creates connections and short-lived
+tokens through the Guacamole REST API, then embeds the client UI in an iframe.
 
 ## Components
 
-- **`guacd`** — protocol daemon on `localhost:4822`. Speaks VNC/RDP to target VMs.
-- **`guacamole`** — Tomcat webapp. REST API + JS client UI. Backed by JDBC
-  PostgreSQL auth extension.
-- **Postgres** (separate from Rails' DB) — Guacamole's auth/connection store.
+- `guacd` protocol daemon on `localhost:4822`; speaks VNC/RDP to target VMs.
+- `guacamole` Tomcat webapp; REST API + JS client UI.
+- Guacamole Postgres database, separate from Payload's app database.
 
 ## Deployment
 
@@ -17,60 +16,73 @@ Run as a single LXC on Proxmox:
 
 ```
 guacamole-lxc:
-  - guacd               (port 4822, localhost only)
-  - tomcat10 + guacamole.war  (port 8080)
-  - postgres            (port 5432, localhost only)
+  - guacd                    (port 4822, localhost only)
+  - tomcat10 + guacamole.war (port 8080)
+  - postgres                 (port 5432, localhost only)
 ```
 
-Caddy routes `https://payload.hackclub.com/guac/*` → `http://guacamole-lxc:8080/guacamole/*`.
+Reverse proxy route:
 
-### guacamole.properties settings
+```
+https://payload.hackclub.com/guac/* -> http://guacamole-lxc:8080/guacamole/*
+```
+
+## guacamole.properties
 
 ```properties
 postgresql-hostname=localhost
 postgresql-database=guacamole_db
 postgresql-username=guacamole
 postgresql-password=******
-api-session-timeout=15      # minutes; short because Rails issues fresh tokens
+api-session-timeout=15
 extension-priority=postgresql
 ```
 
-## REST API surface we use
+## REST API surface
 
 Base: `http://guacamole-lxc:8080/guacamole/api`
 Data source: `postgresql`
 
-### 1. Get admin token (Rails → Guacamole)
+### 1. Get admin token
 
-```
+```http
 POST /api/tokens
 Content-Type: application/x-www-form-urlencoded
+
 username=guac-admin&password=<secret>
 ```
 
 Response:
+
 ```json
-{ "authToken": "C90FE...", "username": "guac-admin",
-  "dataSource": "postgresql" }
+{
+  "authToken": "C90FE...",
+  "username": "guac-admin",
+  "dataSource": "postgresql"
+}
 ```
 
-Cache in Solid Cache (TTL = `api-session-timeout - 1m`). Refresh on 401.
+Cache in memory with TTL slightly below `api-session-timeout`. Refresh on 401.
+This is safe for one app container. Use Redis cache if the app is scaled later.
 
 ### 2. Create one-shot user
 
-```
+```http
 POST /api/session/data/postgresql/users?token=<admin>
 Content-Type: application/json
+
 {
   "username": "payload-42",
   "password": "<random>"
 }
 ```
 
-### 3. Create VNC connection (Linux/Android/macOS)
+### 3. Create VNC connection
 
-```
+```http
 POST /api/session/data/postgresql/connections?token=<admin>
+Content-Type: application/json
+
 {
   "parentIdentifier": "ROOT",
   "name": "payload-42",
@@ -90,60 +102,71 @@ POST /api/session/data/postgresql/connections?token=<admin>
 }
 ```
 
-Response: `{ "identifier": "17", ... }` — store as `guacamole_connection_id`.
+Response: `{ "identifier": "17" }`. Store as `guacamole_connection_id`.
 
-### 3b. Create RDP connection (Windows)
+### 4. Create RDP connection
 
-Same shape, `protocol: "rdp"`, with parameters:
+Same shape, but `protocol` is `rdp` and parameters include:
+
 ```json
 {
-  "hostname": "10.0.0.42", "port": "3389",
-  "username": "reviewer", "password": "<vm credential>",
-  "ignore-cert": "true", "security": "any",
-  "disable-copy": "false", "disable-paste": "false"
+  "hostname": "10.0.0.42",
+  "port": "3389",
+  "username": "reviewer",
+  "password": "<vm credential>",
+  "ignore-cert": "true",
+  "security": "any",
+  "disable-copy": "false",
+  "disable-paste": "false"
 }
 ```
 
-### 4. Grant user access to connection
+### 5. Grant user access to connection
 
-```
+```http
 PATCH /api/session/data/postgresql/users/payload-42/permissions?token=<admin>
+Content-Type: application/json
+
 [
   { "op": "add", "path": "/connectionPermissions/17", "value": "READ" }
 ]
 ```
 
-### 5. Issue session token for reviewer
+### 6. Issue session token for reviewer
 
-```
+```http
 POST /api/tokens
-username=payload-42&password=<that-user's-password>
+Content-Type: application/x-www-form-urlencoded
+
+username=payload-42&password=<that-user-password>
 ```
 
-→ authToken goes in the iframe URL.
+`authToken` goes in the iframe URL. The one-shot Guacamole password should be
+encrypted in Payload's database so fresh tokens can be issued while the VM is
+alive.
 
-### 6. Iframe URL
+### 7. Iframe URL
 
-Connection identifier is **base64 of `<id>\0c\0<dataSource>`** (NULL-separated):
+Connection identifier is base64 of `<id>\0c\0<dataSource>`:
 
-```ruby
-require "base64"
-id_param = Base64.strict_encode64("17\0c\0postgresql")  # → "MTcAYwBwb3N0Z3Jlc3Fs"
+```ts
+const idParam = Buffer.from("17\0c\0postgresql", "utf8").toString("base64");
 ```
 
 Iframe src:
-```
+
+```text
 https://payload.hackclub.com/guac/#/client/MTcAYwBwb3N0Z3Jlc3Fs?token=<authToken>
 ```
 
-### 7. Cleanup on terminate
+### 8. Cleanup on terminate
 
-```
+```http
 DELETE /api/session/data/postgresql/connections/17?token=<admin>
 DELETE /api/session/data/postgresql/users/payload-42?token=<admin>
 ```
 
-Both idempotent — treat 404 as success.
+Both are idempotent. Treat 404 as success.
 
 ## Env vars
 
@@ -152,25 +175,26 @@ GUACAMOLE_BASE_URL=http://guacamole-lxc:8080/guacamole
 GUACAMOLE_PUBLIC_BASE_URL=https://payload.hackclub.com/guac
 GUACAMOLE_DATA_SOURCE=postgresql
 GUACAMOLE_ADMIN_USER=payload-admin
-GUACAMOLE_ADMIN_PASSWORD=…
+GUACAMOLE_ADMIN_PASSWORD=...
 ```
 
-## Why iframe, not custom client (for v1)
+## Why iframe, not custom client
 
-Iframe for v1. Architecture stays open for custom `guacamole-common-js` client later.
+Iframe remains the v1 choice. A custom `guacamole-common-js` client requires a
+websocket tunnel, keyboard/mouse handling, clipboard plumbing, and on-screen
+keyboard work. The iframe gets the review workflow shipping quickly.
 
-The custom-client path requires websocket tunnel, keyboard/mouse/clipboard plumbing,
-and OSK reimplementation. That's nontrivial. Iframe gets 90% of the value in 10%
-of the time.
+To make the future swap easier:
 
-To make the swap easy later:
-- Keep connection-creation in `Guacamole::ConnectionRegistrar` service object.
-- Don't depend on Guacamole's web UI in any user-visible copy.
+- Keep connection creation in a `GuacamoleClient` / `registerGuacamoleConnection`
+  service.
+- Do not mention Guacamole internals in user-facing copy.
+- Keep iframe-specific logic isolated to the session view.
 
 ## Known gotchas
 
-- **Clipboard on RDP**: requires `disable-copy: "false"` AND Windows RDP
-  clipboard redirection enabled (default is on).
-- **Token in URL**: appears in browser history. Token TTL is short and bound to
-  one-shot user. Don't log it server-side or include in error reports.
-- **Audio**: off by default. Not worth it for v1.
+- Clipboard on RDP requires `disable-copy = false` and Windows clipboard
+  redirection enabled.
+- Tokens in iframe URLs can appear in browser history. Keep TTL short and do not
+  log URLs with query strings.
+- Audio is off by default and not worth v1 complexity.
