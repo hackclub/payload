@@ -25,19 +25,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-theme="payload" className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col font-sans bg-base-100 text-base-content relative">
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col font-sans bg-hc-darker text-hc-smoke selection:bg-hc-red selection:text-white">
         <FlyonUIInit />
-        <header className="navbar bg-base-200 border-b border-base-300 px-4 md:px-8">
-          <div className="flex-1 flex items-center gap-3">
-             <div className="bg-primary w-6 h-6 rounded-sm"></div>
-             <span className="text-xl font-bold text-base-content tracking-tight">Payload</span>
+        <nav className="bg-hc-dark border-b border-hc-darkless px-6 py-4 flex items-center justify-between shadow-sm">
+          <div className="flex items-center">
+             <span className="text-2xl font-black tracking-tight text-hc-red uppercase">Payload</span>
           </div>
-          <div className="flex-none">
+          <div className="flex items-center">
              <UserMenu />
           </div>
-        </header>
-        <main className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-8">
+        </nav>
+        <main className="flex-1 max-w-4xl mx-auto w-full py-12 px-6">
           {children}
         </main>
       </body>

@@ -3,7 +3,6 @@ import { db } from "@/db";
 import { reviewerAllowlistEntries } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
-import { Play, AlertCircle, Laptop, Clock, TerminalSquare } from "lucide-react";
 
 export default async function Dashboard() {
   const session = await auth();
@@ -11,17 +10,16 @@ export default async function Dashboard() {
   if (!session?.user) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-4">
-        <div className="bg-base-200 border border-base-300 rounded-hc p-10 max-w-md w-full shadow-lg text-center">
-          <TerminalSquare className="w-16 h-16 mx-auto text-primary mb-6" />
-          <h1 className="text-3xl font-bold mb-4 text-base-content">Payload</h1>
-          <p className="text-slate mb-8">Sandboxed desktop environments for reviewing Hack Club projects.</p>
+        <div className="bg-hc-dark border border-hc-darkless rounded-hc p-10 max-w-md w-full shadow-lg text-center">
+          <h1 className="text-4xl font-black mb-4 text-hc-snow uppercase tracking-tight text-hc-red">Payload</h1>
+          <p className="text-hc-muted mb-8 text-lg">Sandboxed desktop environments for reviewing Hack Club projects.</p>
           <form
             action={async () => {
               "use server";
               await signIn("hackclub", { redirectTo: "/" });
             }}
           >
-            <button type="submit" className="btn btn-primary w-full text-lg">
+            <button type="submit" className="bg-hc-red hover:bg-[#d82a41] text-white font-bold py-3 px-6 rounded-hc w-full text-lg transition-colors shadow-sm">
               Sign in with Hack Club
             </button>
           </form>
@@ -33,18 +31,19 @@ export default async function Dashboard() {
   const slackId = (session.user as any).slackId;
   if (!slackId) {
      return (
-      <div className="alert alert-error max-w-xl mx-auto mt-10 rounded-hc shadow">
-        <AlertCircle className="w-6 h-6" />
-        <div className="flex-1">
-          <h3 className="text-lg font-bold">Configuration Error</h3>
-          <p>No Slack ID associated with your Hack Club Auth profile.</p>
+      <div className="bg-hc-dark border border-hc-red/50 rounded-hc p-6 max-w-xl mx-auto mt-10 shadow-lg">
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xl font-bold text-hc-red mb-1">Configuration Error</h3>
+          <p className="text-hc-smoke">No Slack ID associated with your Hack Club Auth profile.</p>
+          <div className="mt-4 pt-4 border-t border-hc-darkless">
+            <form action={async () => {
+                "use server";
+                await signOut();
+              }}>
+              <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-2 px-4 rounded transition-colors text-sm">Sign out</button>
+            </form>
+          </div>
         </div>
-        <form action={async () => {
-            "use server";
-            await signOut();
-          }}>
-          <button className="btn btn-sm btn-ghost">Sign out</button>
-        </form>
       </div>
      );
   }
@@ -55,18 +54,17 @@ export default async function Dashboard() {
 
   if (!allowlistEntry) {
     return (
-      <div className="alert alert-warning max-w-xl mx-auto mt-10 rounded-hc shadow">
-        <AlertCircle className="w-6 h-6" />
-        <div className="flex flex-col gap-2 flex-1">
-          <h3 className="text-lg font-bold">Access Denied</h3>
-          <p>Your account is valid but your Slack ID (<code className="bg-base-300 px-1 rounded">{slackId}</code>) is not allowlisted to access sandboxes.</p>
-          <p className="text-sm opacity-80 mt-1">Ask an admin to add your Slack ID to the allowlist.</p>
-          <div className="mt-2">
+      <div className="bg-hc-dark border border-hc-orange/50 rounded-hc p-6 max-w-xl mx-auto mt-10 shadow-lg">
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xl font-bold text-hc-orange mb-1">Access Denied</h3>
+          <p className="text-hc-smoke">Your account is valid but your Slack ID (<code className="bg-hc-darker px-1.5 py-0.5 rounded border border-hc-darkless text-hc-cyan">{slackId}</code>) is not allowlisted to access sandboxes.</p>
+          <p className="text-sm text-hc-muted mt-1">Ask an admin to add your Slack ID to the allowlist.</p>
+          <div className="mt-4 pt-4 border-t border-hc-darkless">
             <form action={async () => {
               "use server";
               await signOut();
             }}>
-              <button className="btn btn-sm">Sign out</button>
+              <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-2 px-4 rounded transition-colors text-sm">Sign out</button>
             </form>
           </div>
         </div>
@@ -76,81 +74,52 @@ export default async function Dashboard() {
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
-      <section>
-        <div className="mb-6 flex justify-between items-end">
-          <h2 className="text-2xl font-bold flex items-center gap-2"><Laptop className="w-6 h-6 text-secondary" /> Active Sessions</h2>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Example of an active session, since we do not have real db hooked yet for sessions we will map a placeholder or show empty */}
-          <div className="card bg-base-200 border border-base-300 shadow-sm hover:border-secondary transition-colors">
-            <div className="card-body p-5">
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="card-title text-lg">Ubuntu 24.04 Linux</h3>
-                <span className="badge badge-success badge-sm font-semibold">Running</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-slate mb-6">
-                <Clock className="w-4 h-4" />
-                <span>Expires in 5h 59m</span>
-              </div>
-              <div className="card-actions justify-end">
-                <Link href="/sessions/demo-uuid-1234" className="btn btn-primary btn-sm w-full">Open Session</Link>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-base-200 border border-base-300 border-dashed text-center flex items-center justify-center p-8 text-slate">
-            <p>You can spawn 1 more session.</p>
-          </div>
-        </div>
-      </section>
+      <div className="mb-10">
+          <h1 className="text-4xl font-bold mb-2 text-hc-snow">My Sessions</h1>
+          <p className="text-hc-muted text-lg">Your active sandboxes for reviewing Hack Club projects.</p>
+      </div>
 
       <section>
-        <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Play className="w-6 h-6 text-primary" /> Spawn VM</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div className="card bg-base-200 border border-base-300 hover:border-primary transition-all shadow-sm group">
-             <div className="card-body">
-               <div className="flex items-center gap-3 mb-2">
-                 <div className="w-10 h-10 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-                   <TerminalSquare className="w-6 h-6" />
-                 </div>
-                 <h3 className="card-title">Ubuntu 24.04</h3>
-               </div>
-               <p className="text-slate text-sm">VNC connection with XFCE desktop environment. Full root access for review tools.</p>
-               <div className="card-actions mt-4">
-                 <button className="btn btn-primary w-full">Spawn Linux</button>
-               </div>
-             </div>
-          </div>
-
-          <div className="card bg-base-300/50 border border-base-300 p-6 flex flex-col justify-between opacity-60 grayscale cursor-not-allowed">
-             <div>
-               <div className="flex items-center gap-3 mb-2">
-                 <div className="w-10 h-10 rounded bg-base-300 flex items-center justify-center">
-                   <Laptop className="w-6 h-6 text-muted" />
-                 </div>
-                 <h3 className="card-title text-muted">Windows 11 Pro</h3>
-               </div>
-               <p className="text-slate text-sm mt-2">Coming later. RDP with cloudbase-init configurations.</p>
-             </div>
-             <button className="btn btn-secondary mt-6 w-full opacity-50" disabled>Spawn Windows</button>
+        {/* Active Session Card Dashboard Format */}
+        <div className="bg-hc-dark rounded-hc border border-hc-darkless p-6 mb-8 shadow-lg hover:border-hc-slate transition-all duration-200 group">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-6">
+              <div>
+                  <h3 className="text-xl font-bold bg-hc-cyan text-hc-darker px-3 py-1 rounded inline-block mb-3">Ubuntu 24.04</h3>
+                  <div className="flex items-center gap-2 text-hc-muted font-medium">
+                      <svg className="w-5 h-5 text-hc-yellow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                      <span>Expires in 5h 59m</span>
+                  </div>
+              </div>
+              {/* Status Badge */}
+              <span className="self-start bg-hc-green/10 text-hc-green font-bold text-sm px-3 py-1.5 rounded-full border border-hc-green/20 flex items-center gap-2 w-fit">
+                  <span className="w-2 h-2 rounded-full bg-hc-green animate-pulse"></span>
+                  Running
+              </span>
           </div>
           
-          <div className="card bg-base-300/50 border border-base-300 p-6 flex flex-col justify-between opacity-60 grayscale cursor-not-allowed">
-             <div>
-               <div className="flex items-center gap-3 mb-2">
-                 <div className="w-10 h-10 rounded bg-base-300 flex items-center justify-center">
-                   <Laptop className="w-6 h-6 text-muted" />
-                 </div>
-                 <h3 className="card-title text-muted">macOS Sonoma</h3>
-               </div>
-               <p className="text-slate text-sm mt-2">Coming later. OpenCore accelerated configuration.</p>
-             </div>
-             <button className="btn btn-secondary mt-6 w-full opacity-50" disabled>Spawn macOS</button>
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row gap-4 mt-6 pt-6 border-t border-hc-darkless">
+              <Link href="/sessions/demo-uuid-1234" className="bg-hc-red hover:bg-[#d82a41] text-white font-bold py-3 px-6 rounded-hc flex-1 text-center text-base transition-colors shadow-sm">
+                  Open Session
+              </Link>
+              <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-3 px-6 rounded-hc transition-colors">
+                  Destroy
+              </button>
           </div>
+        </div>
 
+        {/* Action to launch a new one */}
+        <div className="bg-hc-dark rounded-hc border border-dashed border-hc-slate/50 p-10 text-center text-hc-muted">
+            <h3 className="text-xl font-bold mb-2 text-hc-smoke">No other sessions</h3>
+            <p className="mb-6 text-sm">You can spin up a new sandboxed environment to review a project.</p>
+            <button className="bg-hc-darkless text-hc-cyan border border-hc-cyan/30 hover:border-hc-cyan font-bold py-2.5 px-6 rounded-hc transition-colors">
+                + Launch Ubuntu 24.04 Sandbox
+            </button>
         </div>
       </section>
     </div>
   );
 }
-

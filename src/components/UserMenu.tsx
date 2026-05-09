@@ -6,23 +6,15 @@ export default async function UserMenu() {
   if (!session?.user) return null;
 
   return (
-    <div className="dropdown dropdown-end">
-      <div tabIndex={0} role="button" className="btn btn-ghost btn-circle avatar border border-base-300">
-        <div className="w-10 rounded-full">
-          <img alt="User Avatar" src={session.user.image || "https://github.com/ghost.png"} />
-        </div>
-      </div>
-      <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52 border border-base-300">
-        <li className="px-4 py-2 font-bold bg-base-200 mb-2 rounded-t-lg">{session.user.name}</li>
-        <li>
-          <form action={async () => {
-            "use server";
-            await signOut();
-          }}>
-            <button type="submit" className="w-full text-left">Sign Out</button>
-          </form>
-        </li>
-      </ul>
+    <div className="flex items-center gap-4 text-hc-smoke bg-hc-darkless px-4 py-2 rounded-full border border-hc-slate/50">
+      <span className="font-bold text-sm">{session.user.name}</span>
+      <div className="w-px h-4 bg-hc-slate"></div>
+      <form action={async () => {
+        "use server";
+        await signOut();
+      }}>
+        <button type="submit" className="text-hc-muted hover:text-hc-red font-bold text-sm transition-colors">Sign Out</button>
+      </form>
     </div>
   );
 }

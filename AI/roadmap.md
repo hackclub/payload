@@ -4,11 +4,11 @@
 
 Goal: remove the Rails implementation and establish a clean Next.js foundation.
 
-- [ ] `pnpm create next-app` with TypeScript, App Router, ESLint, and `src/`
-- [ ] Tailwind CSS v4 + FlyonUI installed
-- [ ] Hack Club theme, Phantom Sans, and base layout wired
+- [x] `pnpm create next-app` with TypeScript, App Router, ESLint, and `src/`
+- [x] Tailwind CSS v4 + FlyonUI installed
+- [x] Hack Club theme, Phantom Sans, and base layout wired
 - [ ] Dockerfile using Next.js standalone output
-- [ ] `docker-compose.yml` for app, Postgres, and Redis in local/dev deploys
+- [x] `docker-compose.yml` for app, Postgres, and Redis in local/dev deploys
 - [ ] `env.ts` with Zod validation
 
 ## v1 — Ship to reviewers (Linux-only)
@@ -22,11 +22,11 @@ later is seed data + template work, not a refactor.
 
 ### Milestone 1 — App skeleton
 
-- [ ] Auth.js Hack Club OIDC login works end to end
-- [ ] `users` and `reviewer_allowlist_entries` tables migrated with Drizzle
+- [x] Auth.js Hack Club OIDC login works end to end
+- [x] `users` and `reviewer_allowlist_entries` tables migrated with Drizzle
 - [ ] Allowlist gate for every server action / route handler touching VMs
-- [ ] Empty dashboard renders for allowlisted user
-- [ ] Denied page renders for authenticated non-reviewer
+- [x] Empty dashboard renders for allowlisted user
+- [x] Denied page renders for authenticated non-reviewer
 
 ### Milestone 2 — Proxmox plumbing
 
