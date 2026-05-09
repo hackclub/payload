@@ -3,6 +3,15 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { db } from "./db"
 import * as schema from "./db/schema"
 
+type CachetProfile = {
+  displayName?: string;
+  imageUrl?: string;
+};
+
+type UserWithSlackId = {
+  slackId?: string | null;
+};
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: DrizzleAdapter(db, {
     usersTable: schema.users,
@@ -28,7 +37,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (profile.slack_id) {
              const res = await fetch(`https://cachet.dunkirk.sh/users/${profile.slack_id}`);
              if (res.ok) {
-               const data = await res.json();
+               const data = (await res.json()) as CachetProfile;
                if (data.displayName) name = data.displayName;
                if (data.imageUrl) image = data.imageUrl;
              }
@@ -50,10 +59,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async session({ session, user }) {
       if (session.user) {
-        (session.user as any).slackId = (user as any).slackId;
+        (session.user as typeof session.user & UserWithSlackId).slackId = (
+          user as typeof user & UserWithSlackId
+        ).slackId;
       }
       return session;
     },
   },
 })
-

@@ -30,10 +30,24 @@ PROXMOX_TOKEN_SECRET=...
 PROXMOX_VERIFY_TLS=true
 PROXMOX_TLS_CA_FILE=/etc/payload/pve-ca.pem
 PROXMOX_DEFAULT_NODE=pve
+PROXMOX_SSH_USER=root
+PROXMOX_SSH_PASSWORD=...
+# optional if SSH target differs from API host:
+PROXMOX_SSH_HOST=pve.lan
+PROXMOX_SSH_PORT=22
 ```
 
 Set `PROXMOX_VERIFY_TLS=false` only for local development with a self-signed
 certificate.
+
+`PROXMOX_TOKEN_ID` must be the full token id from Proxmox, not just the token
+name. If the UI shows token name `payload` for user `root@pam`, the env value is
+`root@pam!payload`.
+
+Do not use the SSH prompt host name as the token realm. For example,
+`root@nullskulls:~#` means SSH user `root` on host `nullskulls`, but the Proxmox
+API user is still usually `root@pam`. A token named `payload` for that user is
+`root@pam!payload`, not `root@nullskulls!payload`.
 
 ## Endpoints Payload uses
 
@@ -44,12 +58,10 @@ Base: `https://{host}:{port}/api2/json`
 | Get next free vmid | `GET /cluster/nextid` |
 | Clone template | `POST /nodes/{node}/qemu/{template_vmid}/clone` |
 | Task status | `GET /nodes/{node}/tasks/{upid}/status` |
-| Set per-VM config | `POST /nodes/{node}/qemu/{vmid}/config` |
-| Regenerate cloud-init | `POST /nodes/{node}/qemu/{vmid}/cloudinit` |
 | Start | `POST /nodes/{node}/qemu/{vmid}/status/start` |
 | Stop | `POST /nodes/{node}/qemu/{vmid}/status/stop` |
 | Status snapshot | `GET /nodes/{node}/qemu/{vmid}/status/current` |
-| Guest network interfaces | `GET /nodes/{node}/qemu/{vmid}/agent/network-get-interfaces` |
+| VM config / MAC address | `GET /nodes/{node}/qemu/{vmid}/config` |
 | Delete | `DELETE /nodes/{node}/qemu/{vmid}?purge=1` |
 
 ## Clone payload
@@ -68,63 +80,36 @@ Response: `{"data": "UPID:pve:0000ABCD:..."}`. Poll
 
 ## Getting the IP
 
-After start, poll:
+Milestone 2 assumes the Debian KDE template does **not** have cloud-init or
+qemu-guest-agent installed. Payload cannot rely on cloud-init regeneration or
+`/agent/network-get-interfaces`.
 
-```http
-GET /nodes/pve/qemu/12345/agent/network-get-interfaces
-```
+The current smoke-test flow is:
 
-Expected shape:
+1. Clone the template.
+2. Read `net0` from `GET /nodes/{node}/qemu/{vmid}/config`.
+3. Parse the generated MAC address.
+4. SSH to the Proxmox host and poll `ip -4 neigh show`.
+5. Return the first non-loopback IPv4 whose `lladdr` matches that MAC.
 
-```json
-{
-  "data": {
-    "result": [
-      {
-        "name": "eth0",
-        "ip-addresses": [
-          { "ip-address-type": "ipv4", "ip-address": "10.0.0.42" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Return the first non-loopback IPv4. Timeout after 120 seconds and mark the
-session `errored`.
-
-Requires `qemu-guest-agent` installed and `agent: 1` in VM config.
+This requires SSH access from the app/worker environment to the Proxmox host.
+Password SSH is supported with `sshpass` and `PROXMOX_SSH_PASSWORD`; key-based
+SSH is supported with `PROXMOX_SSH_KEY_PATH`. If this is unreliable in
+production, prefer adding a tiny network-side IP lookup service or reading DHCP
+leases from the actual DHCP authority.
 
 ## Per-VM credential injection
 
 | OS | Mechanism |
 |----|-----------|
-| Linux | cloud-init `cipassword` + first-boot script sets VNC password |
+| Linux | Debian KDE template has fixed `shipwrights` / `shipwrights` credentials for RDP |
 | Windows | cloudbase-init writes RDP password; or autounattend.xml |
 | Android-x86 | First-boot script reads cloud-init from cdrom |
 | macOS | LaunchDaemon reads cloud-init, resets screen-sharing password |
 
-Linux config flow:
-
-```http
-POST /nodes/pve/qemu/12345/config
-Content-Type: application/json
-
-{
-  "ciuser": "reviewer",
-  "cipassword": "<random>",
-  "ipconfig0": "ip=dhcp"
-}
-```
-
-Then:
-
-```http
-POST /nodes/pve/qemu/12345/cloudinit
-```
-
-See [vm-templates.md](../vm-templates.md) for per-OS prep checklist.
+Milestone 2 does not inject per-session credentials because cloud-init is not
+available on the template. Treat the fixed credential as a temporary
+operator-controlled template detail; rotate it before enabling untrusted users.
 
 ## TypeScript client sketch
 
@@ -165,8 +150,9 @@ export class ProxmoxClient {
 }
 ```
 
-Add a small retry wrapper around idempotent calls and task polling. Do not retry
-non-idempotent calls unless the operation can be safely detected afterward.
+The implementation lives in `src/lib/proxmox`. Add a small retry wrapper around
+idempotent calls and task polling. Do not retry non-idempotent calls unless the
+operation can be safely detected afterward.
 
 ## Operational notes
 
@@ -174,5 +160,5 @@ non-idempotent calls unless the operation can be safely detected afterward.
   Treat it as a hint and tolerate "VMID already exists" by retrying with a new
   ID.
 - **Linked clones:** require template disk storage that supports linked clones.
-- **Cloud-init regeneration:** re-run after config changes before starting.
+- **No cloud-init in milestone 2:** VM clones use the template defaults.
 - **TLS:** production should trust Proxmox CA instead of disabling TLS checks.

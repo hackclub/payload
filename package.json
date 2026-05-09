@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "payload": "tsx scripts/payload.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",

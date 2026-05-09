@@ -1,6 +1,6 @@
 import { DestroyButton } from "@/components/DestroyButton";
 import { auth } from "@/auth";
-import { Clock, MonitorPlay, XCircle } from "lucide-react";
+import { Clock } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 

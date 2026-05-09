@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, primaryKey, integer } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 import { type AdapterAccountType } from "next-auth/adapters";
 
 export const users = pgTable("user", {
@@ -55,4 +55,18 @@ export const verificationTokens = pgTable(
 export const reviewerAllowlistEntries = pgTable("reviewer_allowlist_entries", {
   slackId: text("slack_id").primaryKey(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const vmTypes = pgTable("vm_types", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  slug: text("slug").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  proxmoxTemplateVmid: integer("proxmox_template_vmid").notNull(),
+  proxmoxNode: text("proxmox_node").notNull(),
+  protocol: text("protocol").notNull(),
+  defaultPort: integer("default_port").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -9,49 +9,57 @@ Every template should:
 
 - Boot headlessly on Proxmox.
 - Use DHCP on the private VM network.
-- Run `qemu-guest-agent` when the OS supports it. Payload uses this to discover
-  VM IP.
 - Start a remote desktop service on boot.
-- Accept an injected per-session password.
 - Avoid persistent reviewer data between clones.
 - Disable sleep, lock screens, and auto-updaters that interrupt reviews.
 - Have a clean shutdown path but tolerate force stop.
 
 ## Linux v1 template
 
-Target: Ubuntu 24.04 LTS + XFCE + TigerVNC.
+Target: Debian + KDE Plasma + RDP.
+
+Current operator-provided constraints:
+
+- Cloud-init is not available.
+- qemu-guest-agent is not assumed to be installed.
+- Normal Proxmox VM clones are available.
+- RDP listens on the default port, `3389`.
+- The template user/password is `shipwrights` / `shipwrights`.
 
 Suggested setup:
 
 ```bash
 apt update
-apt install -y qemu-guest-agent xfce4 xfce4-goodies tigervnc-standalone-server
-systemctl enable --now qemu-guest-agent
+apt install -y kde-plasma-desktop xrdp
+systemctl enable --now xrdp
 ```
 
-Create user:
+Create user if the template does not already have one:
 
 ```bash
-useradd -m -s /bin/bash reviewer
-usermod -aG sudo reviewer
+useradd -m -s /bin/bash shipwrights
+echo 'shipwrights:shipwrights' | chpasswd
+usermod -aG sudo shipwrights
 ```
-
-First-boot script responsibilities:
-
-- Read cloud-init password for `reviewer`.
-- Set Linux login password.
-- Set VNC password for TigerVNC.
-- Start VNC on `:0` or `:1` consistently.
-- Write a small marker so repeated boots do not re-randomize credentials unless
-  intended.
 
 Proxmox template settings:
 
-- `agent: 1`
-- cloud-init drive attached
-- DHCP via `ipconfig0=ip=dhcp`
-- serial console optional but useful for debugging
+- DHCP on the VM network.
+- Linked clones require compatible storage.
 - template VMID recorded in `vm_types`
+
+IP discovery:
+
+- Payload reads the clone's `net0` MAC address from Proxmox config.
+- Payload polls the Proxmox host neighbor table over SSH with `ip -4 neigh show`.
+- The matched IPv4 is passed to Guacamole as the RDP target.
+
+Future hardening:
+
+- Install qemu-guest-agent and use Proxmox guest-agent IP lookup, or
+- Add a DHCP/IPAM lookup service by MAC address, and
+- Replace the fixed template password with per-session credentials before
+  broader reviewer rollout.
 
 ## Future Windows template
 
@@ -86,13 +94,13 @@ Keep seed data in `src/config/vm-types.ts`, then load via a pnpm script.
 export const vmTypeSeeds = [
   {
     slug: "linux",
-    displayName: "Ubuntu 24.04",
+    displayName: "Debian KDE",
     proxmoxTemplateVmid: 9001,
     proxmoxNode: "pve",
-    protocol: "vnc",
-    defaultPort: 5900,
+    protocol: "rdp",
+    defaultPort: 3389,
     enabled: true,
-    description: "Clean Ubuntu desktop for reviewing Linux GUI apps.",
+    description: "Clean Debian KDE desktop for reviewing Linux GUI apps.",
   },
 ];
 ```

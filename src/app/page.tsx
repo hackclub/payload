@@ -4,6 +4,10 @@ import { reviewerAllowlistEntries } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
 
+type UserWithSlackId = {
+  slackId?: string | null;
+};
+
 export default async function Dashboard() {
   const session = await auth();
 
@@ -28,7 +32,7 @@ export default async function Dashboard() {
     );
   }
 
-  const slackId = (session.user as any).slackId;
+  const slackId = (session.user as typeof session.user & UserWithSlackId).slackId;
   if (!slackId) {
      return (
       <div className="bg-hc-dark border border-hc-red/50 rounded-hc p-6 max-w-xl mx-auto mt-10 shadow-lg">

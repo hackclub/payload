@@ -30,10 +30,10 @@ later is seed data + template work, not a refactor.
 
 ### Milestone 2 — Proxmox plumbing
 
-- [ ] `ProxmoxClient` using native `fetch`, API token auth, timeout, and retries
-- [ ] `pnpm payload proxmox:test-clone` script clones, polls IP, stops, deletes
-- [ ] Linux VM template built and verified: Ubuntu 24.04 + XFCE + TigerVNC
-- [ ] `vm_types` seed data loaded with `linux` row enabled
+- [x] `ProxmoxClient` using native `fetch`, API token auth, timeout, and retries
+- [x] `pnpm payload proxmox:test-clone` script clones, polls IP, stops, deletes
+- [X] Linux VM template built and verified: Debian KDE + RDP
+- [x] `vm_types` seed data loaded with `linux` row enabled
 
 ### Milestone 3 — Guacamole plumbing
 
