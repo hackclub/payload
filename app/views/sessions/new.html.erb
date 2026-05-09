@@ -1,0 +1,20 @@
+<main class="auth-page">
+  <section class="auth-panel">
+    <div class="mark-large">P</div>
+    <h1>Payload</h1>
+    <p>Spin up short-lived review VMs from your browser.</p>
+
+    <% if oidc_configured? %>
+      <%= button_to "/auth/hackclub", method: :post, class: "button button-primary button-wide", data: { turbo: false } do %>
+        <%= icon("shield") %>
+        <span>Sign in with Hack Club</span>
+      <% end %>
+    <% else %>
+      <button class="button button-primary button-wide" disabled>
+        <%= icon("shield") %>
+        <span>Hack Club sign-in unavailable</span>
+      </button>
+      <p class="fine-print">Set the Hack Club OIDC environment variables to enable live sign-in.</p>
+    <% end %>
+  </section>
+</main>

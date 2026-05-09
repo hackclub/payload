@@ -1,0 +1,39 @@
+# VM type catalog. v1 ships Linux only (see ADR-0010); Windows / macOS / Android
+# rows live here with `enabled: false` so adding them later is just flipping a
+# flag + building the template (see vm-templates.md).
+
+- slug: linux
+  display_name: "Ubuntu 24.04"
+  proxmox_template_vmid: 9000
+  proxmox_node: pve
+  protocol: vnc
+  default_port: 5900
+  enabled: true
+  description: "Ubuntu 24.04 LTS with XFCE desktop, exposed over VNC. Best for general Linux GUI projects and CLI work."
+
+- slug: windows
+  display_name: "Windows 11 Pro"
+  proxmox_template_vmid: 9001
+  proxmox_node: pve
+  protocol: rdp
+  default_port: 3389
+  enabled: false
+  description: "Windows 11 Pro with cloudbase-init. Use for Windows installers and Win32 apps. (Coming soon)"
+
+- slug: macos
+  display_name: "macOS Sonoma"
+  proxmox_template_vmid: 9002
+  proxmox_node: pve
+  protocol: vnc
+  default_port: 5900
+  enabled: false
+  description: "macOS via OpenCore on Proxmox. Use for Mac-only tooling. (Coming soon)"
+
+- slug: android
+  display_name: "Android-x86 (BlissOS)"
+  proxmox_template_vmid: 9003
+  proxmox_node: pve
+  protocol: vnc
+  default_port: 5900
+  enabled: false
+  description: "Android-x86 / BlissOS for evaluating Android apps without a phone. (Coming soon)"

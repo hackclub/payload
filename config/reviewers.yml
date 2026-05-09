@@ -1,0 +1,11 @@
+# Slack-ID allowlist for Payload reviewers. See ADR-0005.
+#
+# This file is the source of truth — it is reconciled into the
+# `reviewer_allowlist_entries` table on every `db:seed` (and on every deploy by
+# config/initializers/sync_reviewer_allowlist.rb).
+#
+# To add a reviewer: open a PR adding a row here.
+
+- slack_id: U084UQFF0LC
+  note: "Local dev / project owner"
+  added_by: bootstrap

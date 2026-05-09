@@ -1,0 +1,102 @@
+<main class="dashboard">
+  <section class="dashboard-hero">
+    <div>
+      <p class="eyebrow">Reviewer console</p>
+      <h1>Choose a clean desktop and get to work.</h1>
+    </div>
+    <div class="hero-meter">
+      <span><%= @active_sessions.count %>/2</span>
+      <small>active VMs</small>
+    </div>
+  </section>
+
+  <section class="section-band">
+    <div class="section-heading">
+      <h2>Active Sessions</h2>
+      <p>VMs self-destruct after 6 hours or 30 minutes idle.</p>
+    </div>
+
+    <% if @active_sessions.any? %>
+      <div class="session-grid">
+        <% @active_sessions.each do |session| %>
+          <article class="session-card">
+            <div class="card-topline">
+              <span class="vm-icon <%= session.vm_type.tint_class %>"><%= icon("monitor") %></span>
+              <span class="badge badge-<%= session.state %>"><%= session.state %></span>
+            </div>
+            <h3><%= session.vm_type.display_name %></h3>
+            <p>Deadline <%= l(session.deadline_at, format: :short) %></p>
+            <div class="button-row">
+              <%= link_to vm_session_path(session), class: "button button-secondary" do %>
+                <%= icon("arrow-right") %>
+                <span>Open</span>
+              <% end %>
+              <%= button_to vm_session_path(session), method: :delete, class: "button button-danger" do %>
+                <%= icon("trash") %>
+                <span>Destroy</span>
+              <% end %>
+            </div>
+          </article>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="empty-state">
+        <%= icon("activity", class_name: "empty-icon") %>
+        <h3>No active VMs</h3>
+        <p>Spawn Linux when you are ready to review something that needs a real desktop.</p>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="section-band">
+    <div class="section-heading">
+      <h2>VM Types</h2>
+      <p>Linux ships first. The rest stay visible so the picker is ready when templates land.</p>
+    </div>
+
+    <div class="vm-grid">
+      <% @vm_types.each do |vm_type| %>
+        <article class="vm-card <%= "vm-card-disabled" unless vm_type.enabled? %>">
+          <div class="card-topline">
+            <span class="vm-icon <%= vm_type.tint_class %>"><%= icon("cpu") %></span>
+            <% if vm_type.enabled? %>
+              <span class="badge badge-ready">available</span>
+            <% else %>
+              <span class="badge">later</span>
+            <% end %>
+          </div>
+          <h3><%= vm_type.display_name %></h3>
+          <p><%= vm_type.description %></p>
+          <% if vm_type.enabled? %>
+            <%= button_to vm_sessions_path(vm_type_id: vm_type.id), method: :post, class: "button button-primary" do %>
+              <%= icon("play") %>
+              <span>Spawn</span>
+            <% end %>
+          <% else %>
+            <button class="button button-muted" disabled>
+              <%= icon("clock") %>
+              <span>Deferred</span>
+            </button>
+          <% end %>
+        </article>
+      <% end %>
+    </div>
+  </section>
+
+  <% if @recent_sessions.any? %>
+    <section class="section-band compact-band">
+      <div class="section-heading">
+        <h2>Recent</h2>
+      </div>
+      <div class="recent-list">
+        <% @recent_sessions.each do |session| %>
+          <div class="recent-item">
+            <span><%= session.vm_type.display_name %></span>
+            <span><%= session.state %></span>
+            <span><%= l(session.updated_at, format: :short) %></span>
+          </div>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+</main>

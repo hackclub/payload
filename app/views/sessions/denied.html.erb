@@ -1,0 +1,12 @@
+<main class="auth-page">
+  <section class="auth-panel auth-panel-wide">
+    <div class="status-icon status-warn"><%= icon("shield") %></div>
+    <h1>Reviewer access required</h1>
+    <p>You signed in successfully, but your Slack ID is not on the Payload reviewer allowlist.</p>
+    <p class="fine-print">Ask an operator to add your Slack ID to <code>config/reviewers.yml</code>, then sign in again.</p>
+    <%= button_to sign_out_path, method: :delete, class: "button button-secondary" do %>
+      <%= icon("log-out") %>
+      <span>Sign out</span>
+    <% end %>
+  </section>
+</main>

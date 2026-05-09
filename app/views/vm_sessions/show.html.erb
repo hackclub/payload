@@ -1,0 +1,36 @@
+<main class="session-page">
+  <section class="session-toolbar">
+    <div class="session-title">
+      <span class="vm-icon <%= @vm_session.vm_type.tint_class %>"><%= icon("monitor") %></span>
+      <div>
+        <h1><%= @vm_session.vm_type.display_name %></h1>
+        <p><%= @vm_session.state %> · expires <%= l(@vm_session.expires_at, format: :short) %></p>
+      </div>
+    </div>
+
+    <div class="button-row">
+      <%= link_to root_path, class: "button button-secondary" do %>
+        <%= icon("arrow-right") %>
+        <span>Dashboard</span>
+      <% end %>
+      <% if @vm_session.alive? %>
+        <%= button_to vm_session_path(@vm_session), method: :delete, class: "button button-danger" do %>
+          <%= icon("trash") %>
+          <span>Destroy</span>
+        <% end %>
+      <% end %>
+    </div>
+  </section>
+
+  <section class="vm-frame">
+    <% if @vm_session.ready? || @vm_session.active? %>
+      <iframe title="<%= @vm_session.vm_type.display_name %> desktop" src="about:blank"></iframe>
+    <% else %>
+      <div class="provisioning-panel">
+        <div class="spinner"></div>
+        <h2>Preparing your VM</h2>
+        <p>The Proxmox and Guacamole jobs will take over from here in the next milestone.</p>
+      </div>
+    <% end %>
+  </section>
+</main>
