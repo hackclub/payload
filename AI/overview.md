@@ -27,7 +27,7 @@ admin UI.
 ## What's in v1
 
 - Hack Club OIDC login + Slack-ID allowlist gate
-- Spawn a **Linux** desktop VM (Ubuntu 24.04 + XFCE over VNC). Linux is the
+- Spawn a **Linux** desktop VM (Debian 12 + XFCE over RDP/xrdp). Linux is the
   only OS shipping in v1.
 - Clone a Proxmox template, boot, register with Guacamole
 - Embedded Guacamole iframe with auto-login token

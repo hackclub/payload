@@ -32,16 +32,17 @@ later is seed data + template work, not a refactor.
 
 - [x] `ProxmoxClient` using native `fetch`, API token auth, timeout, and retries
 - [x] `pnpm payload proxmox:test-clone` script clones, polls IP, stops, deletes
-- [X] Linux VM template built and verified: Debian KDE + RDP
+- [x] Linux VM template built and verified: Debian 12 + XFCE + xrdp
 - [x] `vm_types` seed data loaded with `linux` row enabled
 
 ### Milestone 3 — Guacamole plumbing
 
-- [ ] Guacamole LXC built and reachable from the app container
-- [ ] `GuacamoleClient`: admin token, create user, create VNC connection, grant
-      permissions, issue token, delete resources
-- [ ] `pnpm payload guac:test-connection` script registers a known test VM and
-      prints the iframe URL
+- [x] Guacamole LXC built and reachable from the app container
+      (operator setup guide: `AI/runbooks/setup-guacamole-lxc.md`)
+- [x] `GuacamoleClient`: admin token, create user, create RDP/VNC connection,
+      grant permissions, issue token, delete resources
+- [x] `pnpm payload guac:test-connection` script registers a known test VM and
+      prints the iframe URL (verified end-to-end: iframe loads the XFCE desktop)
 
 ### Milestone 4 — End-to-end lifecycle
 

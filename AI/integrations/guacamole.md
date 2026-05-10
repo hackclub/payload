@@ -112,10 +112,12 @@ Same shape, but `protocol` is `rdp` and parameters include:
 {
   "hostname": "10.0.0.42",
   "port": "3389",
-  "username": "reviewer",
+  "username": "shipwrights",
   "password": "<vm credential>",
   "ignore-cert": "true",
-  "security": "any",
+  "security": "tls",
+  "disable-auth": "false",
+  "resize-method": "display-update",
   "disable-copy": "false",
   "disable-paste": "false"
 }

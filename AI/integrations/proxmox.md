@@ -80,7 +80,7 @@ Response: `{"data": "UPID:pve:0000ABCD:..."}`. Poll
 
 ## Getting the IP
 
-Milestone 2 assumes the Debian KDE template does **not** have cloud-init or
+Milestone 2 assumes the Debian XFCE template does **not** have cloud-init or
 qemu-guest-agent installed. Payload cannot rely on cloud-init regeneration or
 `/agent/network-get-interfaces`.
 
@@ -102,7 +102,7 @@ leases from the actual DHCP authority.
 
 | OS | Mechanism |
 |----|-----------|
-| Linux | Debian KDE template has fixed `shipwrights` / `shipwrights` credentials for RDP |
+| Linux | Debian XFCE + xrdp template has fixed `shipwrights` / `shipwrights` credentials for RDP |
 | Windows | cloudbase-init writes RDP password; or autounattend.xml |
 | Android-x86 | First-boot script reads cloud-init from cdrom |
 | macOS | LaunchDaemon reads cloud-init, resets screen-sharing password |

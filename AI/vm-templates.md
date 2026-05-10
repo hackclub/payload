@@ -16,7 +16,7 @@ Every template should:
 
 ## Linux v1 template
 
-Target: Debian + KDE Plasma + RDP.
+Target: Debian 12 + XFCE + xrdp.
 
 Current operator-provided constraints:
 
@@ -24,23 +24,15 @@ Current operator-provided constraints:
 - qemu-guest-agent is not assumed to be installed.
 - Normal Proxmox VM clones are available.
 - RDP listens on the default port, `3389`.
+- Guacamole RDP security mode is `tls`.
 - The template user/password is `shipwrights` / `shipwrights`.
 
-Suggested setup:
+Canonical setup:
 
-```bash
-apt update
-apt install -y kde-plasma-desktop xrdp
-systemctl enable --now xrdp
-```
-
-Create user if the template does not already have one:
-
-```bash
-useradd -m -s /bin/bash shipwrights
-echo 'shipwrights:shipwrights' | chpasswd
-usermod -aG sudo shipwrights
-```
+Use [runbooks/build-linux-template.md](./runbooks/build-linux-template.md) for
+the from-scratch template build. If an older Debian KDE/KRDP template must be
+salvaged, use [runbooks/template-switch-to-xrdp.md](./runbooks/template-switch-to-xrdp.md)
+as a migration reference, but the preferred v1 template is XFCE.
 
 Proxmox template settings:
 
@@ -94,13 +86,13 @@ Keep seed data in `src/config/vm-types.ts`, then load via a pnpm script.
 export const vmTypeSeeds = [
   {
     slug: "linux",
-    displayName: "Debian KDE",
-    proxmoxTemplateVmid: 9001,
-    proxmoxNode: "pve",
+    displayName: "Debian XFCE",
+    proxmoxTemplateVmid: 67001,
+    proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
     protocol: "rdp",
     defaultPort: 3389,
     enabled: true,
-    description: "Clean Debian KDE desktop for reviewing Linux GUI apps.",
+    description: "Debian XFCE 4.18 over RDP.",
   },
 ];
 ```

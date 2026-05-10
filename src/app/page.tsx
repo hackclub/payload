@@ -88,7 +88,7 @@ export default async function Dashboard() {
         <div className="bg-hc-dark rounded-hc border border-hc-darkless p-6 mb-8 shadow-lg hover:border-hc-slate transition-all duration-200 group">
           <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-6">
               <div>
-                  <h3 className="text-xl font-bold bg-hc-cyan text-hc-darker px-3 py-1 rounded inline-block mb-3">Ubuntu 24.04</h3>
+                  <h3 className="text-xl font-bold bg-hc-cyan text-hc-darker px-3 py-1 rounded inline-block mb-3">Debain KDE Plasma</h3>
                   <div className="flex items-center gap-2 text-hc-muted font-medium">
                       <svg className="w-5 h-5 text-hc-yellow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <circle cx="12" cy="12" r="10"></circle>
@@ -119,8 +119,17 @@ export default async function Dashboard() {
         <div className="bg-hc-dark rounded-hc border border-dashed border-hc-slate/50 p-10 text-center text-hc-muted">
             <h3 className="text-xl font-bold mb-2 text-hc-smoke">No other sessions</h3>
             <p className="mb-6 text-sm">You can spin up a new sandboxed environment to review a project.</p>
-            <button className="bg-hc-darkless text-hc-cyan border border-hc-cyan/30 hover:border-hc-cyan font-bold py-2.5 px-6 rounded-hc transition-colors">
-                + Launch Ubuntu 24.04 Sandbox
+            <button className="bg-hc-darkless text-hc-cyan border border-hc-cyan/30 hover:border-hc-cyan font-bold py-2.5 px-6 rounded-hc transition-colors mr-4">
+                + Launch Debain VM
+            </button>
+            <button className="bg-hc-darkless text-hc-cyan border border-hc-cyan/30 hover:border-hc-cyan font-bold py-2.5 px-6 rounded-hc transition-colors mr-4">
+                + Launch Windows VM
+            </button>
+            <button className="bg-hc-darkless text-hc-cyan border border-hc-cyan/30 hover:border-hc-cyan font-bold py-2.5 px-6 rounded-hc transition-colors mr-4">
+                + Launch MacOS VM
+            </button>
+            <button className="bg-hc-darkless text-hc-cyan border border-hc-cyan/30 hover:border-hc-cyan font-bold py-2.5 px-6 rounded-hc transition-colors mr-4 mt-4">
+                + Launch Android VM
             </button>
         </div>
       </section>

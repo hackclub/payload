@@ -50,7 +50,7 @@ template.
 |--------|------|-------|
 | id | bigserial pk | |
 | slug | text unique not null | `linux`, later `windows`, `android`, `macos` |
-| display_name | text not null | "Ubuntu 24.04", etc. |
+| display_name | text not null | "Debian XFCE", etc. |
 | proxmox_template_vmid | integer not null | source template VMID |
 | proxmox_node | text not null | Proxmox node hosting the template |
 | protocol | text not null | `vnc` or `rdp`; validate with Drizzle enum or check |

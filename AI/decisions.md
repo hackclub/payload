@@ -129,7 +129,7 @@ user-facing copy.
 
 ## ADR-0010 — v1 ships Linux only
 
-**Date:** 2026-05-09 | **Status:** Accepted
+**Date:** 2026-05-09 | **Status:** Superseded by ADR-0020
 
 Initially v1 scoped four VM types: Windows, Linux, Android, and macOS.
 
@@ -268,3 +268,23 @@ Do not wire Kamal for now. Coolify is likely later.
 **Consequences:**
 - Deployment surface stays portable.
 - Compose files are useful for local and early production setups.
+
+---
+
+## ADR-0020 — Linux v1 template is Debian 12 + XFCE + xrdp
+
+**Date:** 2026-05-10 | **Status:** Accepted
+
+The original Linux-only v1 decision picked Ubuntu 24.04 + XFCE over VNC. During
+Milestone 2/3 validation, the working path became Debian 12 + XFCE over xrdp,
+connected through Guacamole RDP with `security=tls`.
+
+**Decision:** v1 ships a Debian 12 + XFCE + xrdp template. The template uses the
+fixed operator-managed `shipwrights` / `shipwrights` Linux credential until
+per-session credential injection is added.
+
+**Consequences:**
+- Guacamole test connections default to RDP on TCP 3389.
+- The canonical build guide is `AI/runbooks/build-linux-template.md`.
+- VNC remains supported by the Guacamole client wrapper for future VM types, but
+  it is not the Linux v1 path.

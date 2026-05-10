@@ -93,8 +93,9 @@ Browser (Reviewer)
 2. Next.js server action or route handler checks: user in allowlist, user has
    fewer than 2 active VMs, VM type enabled.
 3. App inserts a `vm_sessions` row and enqueues a BullMQ `provision-vm` job.
-4. Worker clones the template in Proxmox, starts it, and polls qemu-guest-agent
-   until the VM reports an IP address.
+4. Worker clones the template in Proxmox, starts it, reads the clone MAC from
+   Proxmox config, and polls the Proxmox host neighbor table until the VM IP is
+   known.
 5. Worker creates the Guacamole user + connection, then marks the session ready.
 6. Browser receives a server-sent event and swaps the provisioning screen for the
    Guacamole iframe.
@@ -107,7 +108,7 @@ Browser (Reviewer)
 - Public internet reaches only the reverse proxy on ports 80/443.
 - Proxmox API, Guacamole REST, Redis, Postgres, and VM VNC/RDP stay on private
   LAN/VLAN networks.
-- Per-VM credentials are generated per session and encrypted at rest with
-  AES-256-GCM using an app secret from env.
+- v1 Linux uses a fixed operator-managed template credential. Per-session VM
+  credentials should replace this before broader rollout.
 - Guacamole tokens are short-lived and bound to a one-shot Guacamole user.
 - Slack-ID allowlist is enforced server-side on every authenticated VM action.
