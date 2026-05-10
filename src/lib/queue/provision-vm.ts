@@ -115,7 +115,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
             username: vmUsername!,
             password: vmPassword,
             "ignore-cert": "true",
-            security: "tls",
+            security: "any",
             "disable-auth": "false",
             "resize-method": "display-update",
             "color-depth": "24",
