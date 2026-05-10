@@ -30,7 +30,7 @@ export default function RootLayout({
         <FlyonUIInit />
         <nav className="bg-hc-dark border-b border-hc-darkless px-6 py-4 flex items-center justify-between shadow-sm">
           <div className="flex items-center">
-             <span className="text-2xl font-black tracking-tight text-hc-red uppercase">Payload</span>
+             <span className="text-2xl font-bold tracking-tight text-hc-red ">Payload</span>
           </div>
           <div className="flex items-center">
              <UserMenu />
