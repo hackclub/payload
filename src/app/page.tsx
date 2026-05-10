@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { createUserSession } from "@/lib/sessions";
 import { redirect } from "next/navigation";
+import { vmTypeSeeds } from "@/config/vm-types";
 
 type UserWithSlackId = {
   slackId?: string | null;
@@ -15,9 +16,9 @@ const STATE_LABELS: Record<string, { label: string; color: string; bg: string; a
   provisioning: { label: "Provisioning", color: "text-hc-yellow", bg: "bg-hc-yellow/10 border-hc-yellow/20" },
   ready: { label: "Ready", color: "text-hc-green", bg: "bg-hc-green/10 border-hc-green/20", animate: true },
   active: { label: "Running", color: "text-hc-green", bg: "bg-hc-green/10 border-hc-green/20", animate: true },
-  terminating: { label: "Terminating", color: "text-hc-orange", bg: "bg-hc-orange/10 border-hc-orange/20" },
+  terminating: { label: "Terminating", color: "text-hc-orange/80", bg: "bg-hc-orange/10 border-hc-orange/20" },
   terminated: { label: "Ended", color: "text-hc-muted", bg: "bg-hc-darker border-hc-darkless" },
-  errored: { label: "Error", color: "text-hc-red", bg: "bg-hc-red/10 border-hc-red/20" },
+  errored: { label: "Error", color: "text-hc-red/80", bg: "bg-hc-red/10 border-hc-red/20" },
 };
 
 function formatTimeRemaining(expiresAt: Date): string {
@@ -116,25 +117,32 @@ export default async function Dashboard() {
           <div className="space-y-4 mb-8">
             {activeSessions.map((s) => {
               const info = STATE_LABELS[s.state] ?? { label: s.state, color: "text-hc-muted", bg: "bg-hc-darker border-hc-darkless" };
+              const seedConfig = vmTypeSeeds.find(v => v.slug === s.vmType?.slug);
               return (
                 <div key={s.id} className="bg-hc-dark rounded-hc border border-hc-darkless p-6 shadow-lg hover:border-hc-slate transition-all duration-200">
                   <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-6">
                     <div>
-                      <h3 className="text-xl font-bold bg-hc-cyan text-hc-darker px-3 py-1 rounded inline-block mb-3">
-                        {s.vmType?.displayName ?? "VM"}
-                      </h3>
-                      <div className="flex items-center gap-2 text-hc-muted font-medium">
-                        <svg className="w-5 h-5 text-hc-yellow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <div className="flex flex-wrap items-center gap-3 mb-2">
+                        {seedConfig?.iconUrl && (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={seedConfig.iconUrl} alt={s.vmType?.displayName ?? "VM"} className="w-8 h-8 object-contain" />
+                        )}
+                        <h3 className="text-2xl font-bold text-hc-snow tracking-tight">
+                          {s.vmType?.displayName ?? "VM"}
+                        </h3>
+                        <span className={`self-start ${info.bg} ${info.color} font-bold text-xs px-2.5 py-1 rounded-full border flex items-center gap-1.5 shadow-sm`}>
+                          {info.animate && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>}
+                          {info.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-hc-muted font-medium text-sm">
+                        <svg className="w-4 h-4 text-hc-slate" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <circle cx="12" cy="12" r="10"></circle>
                           <polyline points="12 6 12 12 16 14"></polyline>
                         </svg>
                         <span>Expires in {formatTimeRemaining(s.expiresAt)}</span>
                       </div>
                     </div>
-                    <span className={`self-start ${info.bg} ${info.color} font-bold text-sm px-3 py-1.5 rounded-full border flex items-center gap-2 w-fit`}>
-                      {info.animate && <span className="w-2 h-2 rounded-full bg-hc-green animate-pulse"></span>}
-                      {info.label}
-                    </span>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-4 mt-6 pt-6 border-t border-hc-darkless">
                     {["ready", "active"].includes(s.state) && (
@@ -160,19 +168,36 @@ export default async function Dashboard() {
         )}
 
         {activeSessions.length < 2 && enabledVmTypes.length > 0 && (
-          <div className="bg-hc-dark rounded-hc border border-dashed border-hc-slate/50 p-10 text-center text-hc-muted">
-            <h3 className="text-xl font-bold mb-2 text-hc-smoke">
-              {activeSessions.length === 0 ? "No active sessions" : "Launch another session"}
-            </h3>
-            <p className="mb-6 text-sm">You can have up to 2 active sandboxes at a time.</p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {enabledVmTypes.map((vt) => (
-                <form key={vt.slug} action={async () => { "use server"; await launchVm(vt.slug); }}>
-                  <button type="submit" className="bg-hc-darkless text-hc-cyan border border-hc-cyan/30 hover:border-hc-cyan font-bold py-2.5 px-6 rounded-hc transition-colors">
-                    + Launch {vt.displayName}
+          <div className="space-y-4 pt-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-hc-darkless pb-4 mb-6 gap-4">
+              <h2 className="text-2xl font-bold text-hc-smoke">Launch a Sandbox</h2>
+              <span className="text-sm text-hc-muted font-medium bg-hc-darker px-3 py-1 rounded-full border border-hc-darkless whitespace-nowrap w-fit">
+                {2 - activeSessions.length} of 2 slots available
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {enabledVmTypes.map((vt) => {
+                const seedConfig = vmTypeSeeds.find(v => v.slug === vt.slug);
+                return (
+                <form key={vt.slug} action={async () => { "use server"; await launchVm(vt.slug); }} className="block h-full">
+                  <button type="submit" className="text-left w-full bg-hc-dark hover:bg-[#1a1c23] border border-hc-darkless hover:border-hc-cyan/50 p-6 rounded-hc transition-all duration-200 group h-full flex flex-col shadow-sm">
+                    <div className="flex justify-between items-start mb-4 w-full">
+                      <div className="flex items-center gap-3">
+                        {seedConfig?.iconUrl && (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={seedConfig.iconUrl} alt={vt.displayName} className="w-8 h-8 object-contain" />
+                        )}
+                        <h3 className="text-lg font-bold text-hc-smoke group-hover:text-hc-cyan transition-colors">{vt.displayName}</h3>
+                      </div>
+                      <div className="w-8 h-8 rounded-full bg-hc-darkless flex shrink-0 items-center justify-center text-hc-cyan group-hover:bg-hc-cyan group-hover:text-hc-darker transition-colors ml-4">
+                        <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                      </div>
+                    </div>
+                    <p className="text-sm text-hc-muted mt-auto leading-relaxed">Click to provision a new instance of this environment.</p>
                   </button>
                 </form>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -182,11 +207,16 @@ export default async function Dashboard() {
         <section>
           <h2 className="text-xl font-bold text-hc-smoke mb-4">Past Sessions</h2>
           <div className="space-y-2">
-            {pastSessions.slice(0, 10).map((s) => {
+            {pastSessions.slice(0, 5).map((s) => {
               const info = STATE_LABELS[s.state] ?? { label: s.state, color: "text-hc-muted", bg: "" };
+              const seedConfig = vmTypeSeeds.find(v => v.slug === s.vmType?.slug);
               return (
                 <div key={s.id} className="bg-hc-darker rounded-hc border border-hc-darkless/50 p-3 flex items-center justify-between">
-                  <div>
+                  <div className="flex items-center gap-3">
+                    {seedConfig?.iconUrl && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={seedConfig.iconUrl} alt={s.vmType?.displayName ?? "VM"} className="w-6 h-6 object-contain" />
+                    )}
                     <span className="font-medium text-hc-smoke">{s.vmType?.displayName ?? "VM"}</span>
                     <span className="text-hc-muted text-sm ml-3">
                       {new Date(s.createdAt).toLocaleDateString()}

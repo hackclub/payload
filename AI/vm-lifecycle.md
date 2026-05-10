@@ -34,16 +34,16 @@ pending -> provisioning -> ready -> active
    - `GET /cluster/nextid`.
    - `POST /nodes/{node}/qemu/{template_vmid}/clone` with fresh `newid`.
    - Poll task status until clone completes.
-   - Inject credential via cloud-init.
-   - Regenerate cloud-init drive.
    - `POST /nodes/{node}/qemu/{vmid}/status/start`.
-4. Wait for IP via `qemu-guest-agent`:
-   - Poll `GET /nodes/{node}/qemu/{vmid}/agent/network-get-interfaces`.
-   - Return first non-loopback IPv4.
+4. Wait for IP via Proxmox host neighbor table:
+   - Read VM MAC from Proxmox config (`net0`).
+   - SSH to Proxmox host and poll `ip -4 neigh show` for matching `lladdr`.
    - Timeout after about 120 seconds.
+   - qemu-guest-agent is not used in v1 (template has `agent enabled=0`).
 5. Guacamole:
    - Create one-shot user `payload-{session_id}` with random password.
-   - Create connection with `hostname = vm_ip`, port, protocol, and credentials.
+   - Create RDP/VNC connection with `hostname = vm_ip`, port, protocol, `disable-copy: false`
+     (clipboard enabled), and `security=tls` for RDP.
    - Grant that user permission to use the connection.
 6. Transition `provisioning -> ready`, persist `proxmox_vmid`, `vm_ip`,
    `guacamole_connection_id`, and encrypted Guacamole password.
@@ -78,9 +78,9 @@ On error: log to `vm_session_events`, mark `errored`, and enqueue
 
 - Endpoint: `GET /api/sessions/:id/events`.
 - Sends `ready`, `errored`, `terminating`, and `terminated` events.
-- Implementation can start with an in-memory subscriber map because v1 runs one
-  app container. Before horizontal scaling, replace this with Redis pub/sub or
-  polling.
+- Implemented via Redis pub/sub (`sse:session:<id>` channels) so multiple app
+  containers can fan out events. Each process maintains an in-memory subscriber
+  map for its own SSE connections.
 
 ### 6. Reap (BullMQ scheduled job: `reap-vm-sessions`)
 

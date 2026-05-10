@@ -6,37 +6,69 @@ abstractions until there is real duplication.
 
 ## Tables
 
-### users
+### users (Auth.js adapter)
 
-The authenticated principal. One row per Hack Club account that has ever logged
-in.
+Uses the standard NextAuth/Auth.js v5 adapter schema. One row per Hack Club
+account that has ever logged in.
 
 | column | type | notes |
 |--------|------|-------|
-| id | bigserial pk | |
-| slack_id | text unique not null | from OIDC claim, e.g. `U0123ABC` |
-| oidc_sub | text unique not null | the `sub` claim, e.g. `ident!abc123` |
-| email | text | from `email` claim |
-| name | text | from `name` claim |
-| avatar_url | text | derived from cachet |
-| last_login_at | timestamptz | |
-| created_at / updated_at | timestamptz | |
+| id | text pk | crypto.randomUUID() |
+| name | text | from OIDC `name` claim |
+| email | text unique | from `email` claim |
+| emailVerified | timestamptz | managed by Auth.js |
+| image | text | avatar from cachet |
+| slack_id | text | from OIDC `slack_id` claim |
 
-Auth.js may also need its own adapter tables if we use database sessions. Keep
-those tables separate from this domain table and document the mapping in code.
+### accounts (Auth.js adapter)
+
+Auth.js OAuth account linking table.
+
+| column | type | notes |
+|--------|------|-------|
+| userId | text fk users.id | |
+| type | text | OAuth provider type |
+| provider | text | e.g. "hackclub" |
+| providerAccountId | text | account ID from provider |
+| refresh_token, access_token, expires_at, token_type, scope, id_token, session_state | various | standard OAuth fields |
+
+Composite PK on `(provider, providerAccountId)`.
+
+### sessions (Auth.js adapter)
+
+Auth.js database session store.
+
+| column | type | notes |
+|--------|------|-------|
+| sessionToken | text pk | |
+| userId | text fk users.id | |
+| expires | timestamptz not null | |
+
+### verificationTokens (Auth.js adapter)
+
+Auth.js email verification / magic link tokens.
+
+| column | type | notes |
+|--------|------|-------|
+| identifier | text | |
+| token | text | |
+| expires | timestamptz not null | |
+
+Composite PK on `(identifier, token)`.
 
 ### reviewer_allowlist_entries
 
-The set of Slack IDs permitted to use Payload. Seed from
-`src/config/reviewers.ts` at deploy time.
+The set of Slack IDs permitted to use Payload. Seeded at deploy time via
+`scripts/seed.ts`.
 
 | column | type | notes |
 |--------|------|-------|
-| id | bigserial pk | |
-| slack_id | text unique not null | |
-| note | text | optional, e.g. "Arcade reviewer 2026" |
-| added_by | text | who added this entry |
-| created_at / updated_at | timestamptz | |
+| slack_id | text pk | Slack ID, e.g. `U0123ABC` |
+| created_at | timestamptz not null default now() | |
+
+Simplified from the original design: no `id` column, no `note`/`added_by`
+fields, `slack_id` is the primary key directly. The seed data is currently
+hardcoded in the seed script rather than read from `src/config/reviewers.ts`.
 
 Authorization rule: a user may use Payload iff a row exists with the same
 `slack_id`. Enforce in server-side helpers used by every VM action and API route.
@@ -48,18 +80,22 @@ template.
 
 | column | type | notes |
 |--------|------|-------|
-| id | bigserial pk | |
+| id | integer pk identity | auto-generated |
 | slug | text unique not null | `linux`, later `windows`, `android`, `macos` |
 | display_name | text not null | "Debian XFCE", etc. |
 | proxmox_template_vmid | integer not null | source template VMID |
 | proxmox_node | text not null | Proxmox node hosting the template |
-| protocol | text not null | `vnc` or `rdp`; validate with Drizzle enum or check |
-| default_port | integer not null | 5900 or 3389 |
+| protocol | text not null | `vnc` or `rdp` |
+| default_port | integer not null | 3389 for RDP, 5900 for VNC |
 | enabled | boolean not null default false | hide from picker without deleting |
 | description | text | shown in picker UI |
+| username | text | template VM default username |
+| password | text | template VM default password |
 | created_at / updated_at | timestamptz | |
 
-v1 ships only Linux enabled.
+The `username` and `password` columns hold the fixed template credential. These
+are the credentials used for Guacamole connections in v1 (per-session credential
+injection is deferred).
 
 ### vm_sessions
 
@@ -67,13 +103,13 @@ The core resource: one row per ephemeral VM.
 
 | column | type | notes |
 |--------|------|-------|
-| id | bigserial pk | |
-| user_id | bigint fk users.id not null | owner |
-| vm_type_id | bigint fk vm_types.id not null | |
+| id | integer pk identity | auto-generated |
+| user_id | text fk users.id not null | owner |
+| vm_type_id | integer fk vm_types.id not null | |
 | state | vm_session_state not null | enum below |
 | proxmox_vmid | integer | nil until cloned |
 | proxmox_node | text | |
-| vm_ip | inet | nil until guest-agent reports it |
+| vm_ip | text | nil until IP discovered |
 | vm_credential_ciphertext | text | encrypted VNC/RDP password |
 | guacamole_connection_id | text | from Guacamole REST |
 | guacamole_username | text | one-shot Guacamole user |
@@ -83,6 +119,9 @@ The core resource: one row per ephemeral VM.
 | terminated_at | timestamptz | nil while alive |
 | termination_reason | text | `idle`, `ttl`, `user`, `error`, `admin`, `stuck` |
 | created_at / updated_at | timestamptz | |
+
+Note: `vm_ip` is `text` (not `inet`) because the Proxmox neighbor table returns
+a string. `user_id` is `text` (UUID) matching the Auth.js users table.
 
 #### state enum
 
@@ -98,10 +137,10 @@ errored      -> provisioning or termination failed; needs operator
 
 #### Indexes
 
-- `(user_id, state)` for "how many active VMs does this user have?"
-- `(state, expires_at)` for TTL reaper query
-- `(state, last_heartbeat_at)` for idle reaper query
-- unique partial index on `proxmox_vmid` where not null, if useful
+- `vm_sessions_user_state_idx` on `(user_id, state)` for "how many active VMs does this user have?"
+- `vm_sessions_state_expires_idx` on `(state, expires_at)` for TTL reaper query
+- `vm_sessions_state_heartbeat_idx` on `(state, last_heartbeat_at)` for idle reaper query
+- `vm_sessions_proxmox_vmid_idx` unique on `proxmox_vmid` (partial index, nulls not constrained)
 
 ### vm_session_events
 
@@ -109,28 +148,90 @@ Append-only audit log per session.
 
 | column | type | notes |
 |--------|------|-------|
-| id | bigserial pk | |
-| vm_session_id | bigint fk vm_sessions.id not null | |
+| id | integer pk identity | auto-generated |
+| vm_session_id | integer fk vm_sessions.id not null | |
 | kind | text not null | `created`, `clone_started`, `ip_acquired`, etc. |
 | payload | jsonb not null default `{}` | structured details |
 | created_at | timestamptz not null | |
 
-## Drizzle sketch
+## Drizzle schema (actual implementation)
 
 ```ts
-import {
-  bigint,
-  bigserial,
-  boolean,
-  inet,
-  integer,
-  jsonb,
-  pgEnum,
-  pgTable,
-  text,
-  timestamp,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { type AdapterAccountType } from "next-auth/adapters";
+
+export const users = pgTable("user", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name"),
+  email: text("email").unique(),
+  emailVerified: timestamp("emailVerified", { mode: "date" }),
+  image: text("image"),
+  slackId: text("slack_id"),
+});
+
+export const accounts = pgTable(
+  "account",
+  {
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").$type<AdapterAccountType>().notNull(),
+    provider: text("provider").notNull(),
+    providerAccountId: text("providerAccountId").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: text("token_type"),
+    scope: text("scope"),
+    id_token: text("id_token"),
+    session_state: text("session_state"),
+  },
+  (account) => [
+    primaryKey({ columns: [account.provider, account.providerAccountId] }),
+  ]
+);
+
+export const sessions = pgTable("session", {
+  sessionToken: text("sessionToken").primaryKey(),
+  userId: text("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expires: timestamp("expires", { mode: "date" }).notNull(),
+});
+
+export const verificationTokens = pgTable(
+  "verificationToken",
+  {
+    identifier: text("identifier").notNull(),
+    token: text("token").notNull(),
+    expires: timestamp("expires", { mode: "date" }).notNull(),
+  },
+  (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })]
+);
+
+export const reviewerAllowlistEntries = pgTable("reviewer_allowlist_entries", {
+  slackId: text("slack_id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const vmTypes = pgTable("vm_types", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  slug: text("slug").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  proxmoxTemplateVmid: integer("proxmox_template_vmid").notNull(),
+  proxmoxNode: text("proxmox_node").notNull(),
+  protocol: text("protocol").notNull(),
+  defaultPort: integer("default_port").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  description: text("description"),
+  username: text("username"),
+  password: text("password"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 export const vmSessionState = pgEnum("vm_session_state", [
   "pending",
@@ -142,49 +243,20 @@ export const vmSessionState = pgEnum("vm_session_state", [
   "errored",
 ]);
 
-export const users = pgTable("users", {
-  id: bigserial("id", { mode: "bigint" }).primaryKey(),
-  slackId: text("slack_id").notNull().unique(),
-  oidcSub: text("oidc_sub").notNull().unique(),
-  email: text("email"),
-  name: text("name"),
-  avatarUrl: text("avatar_url"),
-  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const reviewerAllowlistEntries = pgTable("reviewer_allowlist_entries", {
-  id: bigserial("id", { mode: "bigint" }).primaryKey(),
-  slackId: text("slack_id").notNull().unique(),
-  note: text("note"),
-  addedBy: text("added_by"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const vmTypes = pgTable("vm_types", {
-  id: bigserial("id", { mode: "bigint" }).primaryKey(),
-  slug: text("slug").notNull().unique(),
-  displayName: text("display_name").notNull(),
-  proxmoxTemplateVmid: integer("proxmox_template_vmid").notNull(),
-  proxmoxNode: text("proxmox_node").notNull(),
-  protocol: text("protocol").notNull(),
-  defaultPort: integer("default_port").notNull(),
-  enabled: boolean("enabled").notNull().default(false),
-  description: text("description"),
-});
-
 export const vmSessions = pgTable(
   "vm_sessions",
   {
-    id: bigserial("id", { mode: "bigint" }).primaryKey(),
-    userId: bigint("user_id", { mode: "bigint" }).notNull().references(() => users.id),
-    vmTypeId: bigint("vm_type_id", { mode: "bigint" }).notNull().references(() => vmTypes.id),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    vmTypeId: integer("vm_type_id")
+      .notNull()
+      .references(() => vmTypes.id),
     state: vmSessionState("state").notNull().default("pending"),
     proxmoxVmid: integer("proxmox_vmid"),
     proxmoxNode: text("proxmox_node"),
-    vmIp: inet("vm_ip"),
+    vmIp: text("vm_ip"),
     vmCredentialCiphertext: text("vm_credential_ciphertext"),
     guacamoleConnectionId: text("guacamole_connection_id"),
     guacamoleUsername: text("guacamole_username"),
@@ -193,21 +265,42 @@ export const vmSessions = pgTable(
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
     terminatedAt: timestamp("terminated_at", { withTimezone: true }),
     terminationReason: text("termination_reason"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    userIdx: index("vm_sessions_user_state_idx").on(table.userId, table.state),
+    stateExpiresIdx: index("vm_sessions_state_expires_idx").on(table.state, table.expiresAt),
+    stateHeartbeatIdx: index("vm_sessions_state_heartbeat_idx").on(table.state, table.lastHeartbeatAt),
     proxmoxVmidIdx: uniqueIndex("vm_sessions_proxmox_vmid_idx").on(table.proxmoxVmid),
   }),
 );
 
 export const vmSessionEvents = pgTable("vm_session_events", {
-  id: bigserial("id", { mode: "bigint" }).primaryKey(),
-  vmSessionId: bigint("vm_session_id", { mode: "bigint" })
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  vmSessionId: integer("vm_session_id")
     .notNull()
-    .references(() => vmSessions.id),
+    .references(() => vmSessions.id, { onDelete: "cascade" }),
   kind: text("kind").notNull(),
   payload: jsonb("payload").notNull().default({}),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const vmSessionsRelations = relations(vmSessions, ({ one }) => ({
+  vmType: one(vmTypes, {
+    fields: [vmSessions.vmTypeId],
+    references: [vmTypes.id],
+  }),
+  user: one(users, {
+    fields: [vmSessions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const vmSessionEventsRelations = relations(vmSessionEvents, ({ one }) => ({
+  session: one(vmSessions, {
+    fields: [vmSessionEvents.vmSessionId],
+    references: [vmSessions.id],
+  }),
+}));
 ```

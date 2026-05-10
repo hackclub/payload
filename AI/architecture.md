@@ -48,7 +48,7 @@ Browser (Reviewer)
 - Brain. Speaks to reviewers, Proxmox, Guacamole, Postgres, and Redis.
 - Uses App Router for UI routes and Route Handlers for API endpoints.
 - Handles Auth.js login, Slack-ID allowlist enforcement, VM CRUD, heartbeat
-  ingest, server-sent events, and BullMQ job processing.
+  ingest, server-sent events (Redis pub/sub fanout), and BullMQ job processing.
 - Runs as one Docker container for now. The BullMQ worker is started in-process
   during runtime, guarded so it does not start during builds or migrations.
 
@@ -89,19 +89,20 @@ Browser (Reviewer)
 
 ## Data flow: reviewer creates a VM
 
-1. Reviewer clicks "Spawn Linux".
-2. Next.js server action or route handler checks: user in allowlist, user has
-   fewer than 2 active VMs, VM type enabled.
-3. App inserts a `vm_sessions` row and enqueues a BullMQ `provision-vm` job.
-4. Worker clones the template in Proxmox, starts it, reads the clone MAC from
-   Proxmox config, and polls the Proxmox host neighbor table until the VM IP is
-   known.
-5. Worker creates the Guacamole user + connection, then marks the session ready.
-6. Browser receives a server-sent event and swaps the provisioning screen for the
-   Guacamole iframe.
-7. Browser sends heartbeat with `fetch` every 30 seconds while the tab is usable.
-8. Reaper job runs every minute and enqueues termination for idle, expired, or
-   stuck sessions.
+ 1. Reviewer clicks "Launch" on a VM type.
+ 2. Next.js server action checks: user in allowlist, user has
+    fewer than 2 active VMs, VM type enabled.
+ 3. App inserts a `vm_sessions` row and enqueues a BullMQ `provision-vm` job.
+ 4. Worker clones the template in Proxmox, starts it, reads the clone MAC from
+    Proxmox config, and polls the Proxmox host neighbor table via SSH until the
+    VM IP is known.
+ 5. Worker creates the Guacamole user + connection, then publishes an SSE event
+    via Redis pub/sub and marks the session ready.
+ 6. Browser receives the SSE event and swaps the provisioning screen for the
+    Guacamole iframe.
+ 7. Browser sends heartbeat with `fetch` every 30 seconds while the tab is usable.
+ 8. Reaper job (BullMQ repeatable) runs every 60 seconds and enqueues termination
+    for idle, expired, or stuck sessions.
 
 ## Security boundaries
 

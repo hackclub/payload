@@ -8,7 +8,8 @@ Goal: remove the Rails implementation and establish a clean Next.js foundation.
 - [x] Tailwind CSS v4 + FlyonUI installed
 - [x] Hack Club theme, Phantom Sans, and base layout wired
 - [ ] Dockerfile using Next.js standalone output
-- [x] `docker-compose.yml` for app, Postgres, and Redis in local/dev deploys
+- [x] `docker-compose.yml` for Postgres and Redis in local/dev deploys (app
+      runs on host; Dockerfile is the missing piece)
 - [ ] `env.ts` with Zod validation
 
 ## v1 — Ship to reviewers (Linux-only)
@@ -24,7 +25,7 @@ later is seed data + template work, not a refactor.
 
 - [x] Auth.js Hack Club OIDC login works end to end
 - [x] `users` and `reviewer_allowlist_entries` tables migrated with Drizzle
-- [ ] Allowlist gate for every server action / route handler touching VMs
+- [x] Allowlist gate for every server action / route handler touching VMs
 - [x] Empty dashboard renders for allowlisted user
 - [x] Denied page renders for authenticated non-reviewer
 
@@ -46,22 +47,24 @@ later is seed data + template work, not a refactor.
 
 ### Milestone 4 — End-to-end lifecycle
 
-- [ ] `vm_sessions` and `vm_session_events` tables migrated
-- [ ] BullMQ queue, in-process worker, and Redis connection wired
-- [ ] `provision-vm` job glues Proxmox and Guacamole
-- [ ] Session view renders iframe with fresh token
-- [ ] SSE endpoint notifies session-ready / errored / terminated
-- [ ] Browser heartbeat route updates `last_heartbeat_at`
-- [ ] `reap-vm-sessions` scheduled job runs every 60 seconds
-- [ ] `terminate-vm` job cleans up Guacamole + Proxmox
-- [ ] Per-user cap of 2 enforced with Postgres advisory lock
+- [x] `vm_sessions` and `vm_session_events` tables migrated
+- [x] BullMQ queue, in-process worker, and Redis connection wired
+- [x] `provision-vm` job glues Proxmox and Guacamole
+- [x] Session view renders iframe with fresh token
+- [x] SSE endpoint notifies session-ready / errored / terminated
+- [x] Browser heartbeat route updates `last_heartbeat_at`
+- [x] `reap-vm-sessions` scheduled job runs every 60 seconds
+- [x] `terminate-vm` job cleans up Guacamole + Proxmox
+- [x] Per-user cap of 2 enforced with Postgres advisory lock
 
 ### Milestone 5 — Polish + ship
 
 - [ ] Linux VM tile works end to end in production
-- [ ] Time-remaining countdown and warning toasts
-- [ ] Session-end screen with reason
-- [ ] Error states designed and tested
+- [x] Time-remaining countdown (live HH:MM:SS per session)
+- [ ] Warning toasts before TTL expiry (10 min, 1 min)
+- [x] Session-end screen with reason
+- [x] Error states designed (terminated, errored, stuck)
+- [ ] Error states tested (no test suite yet)
 - [ ] Production Docker image deployed
 - [ ] Production secrets configured
 - [ ] Runbooks updated from real deployment notes
@@ -72,9 +75,8 @@ later is seed data + template work, not a refactor.
 - [ ] Session recording to disk
 - [ ] Admin UI for allowlist
 - [ ] Global session cap
-- [ ] Move SSE fanout to Redis pub/sub if app scales beyond one container
+- [x] Move SSE fanout to Redis pub/sub if app scales beyond one container
 - [ ] Split BullMQ worker into a separate process if in-process starts hurting
-      deploys or scale-out
 
 ## v2 — Custom Guacamole client
 
