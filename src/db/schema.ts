@@ -68,6 +68,8 @@ export const vmTypes = pgTable("vm_types", {
   defaultPort: integer("default_port").notNull(),
   enabled: boolean("enabled").notNull().default(false),
   description: text("description"),
+  username: text("username"),
+  password: text("password"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

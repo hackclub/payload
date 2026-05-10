@@ -28,7 +28,7 @@ export async function processTerminateVm(jobData: TerminateJobData) {
       .set({ state: "terminating", updatedAt: new Date() })
       .where(eq(vmSessions.id, sessionId));
 
-    publish({ type: "terminating", sessionId });
+    publish({ type: "terminating", state: "terminating", sessionId });
   }
 
   const guacConfig = getGuacamoleConfig();
@@ -86,5 +86,5 @@ export async function processTerminateVm(jobData: TerminateJobData) {
     payload: { reason },
   });
 
-  publish({ type: "terminated", sessionId, data: { reason } });
+  publish({ type: "terminated", state: "terminated", sessionId, data: { reason } });
 }

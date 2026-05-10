@@ -8,5 +8,7 @@ export const vmTypeSeeds = [
     defaultPort: 3389,
     enabled: true,
     description: "Debian XFCE 4.18 over RDP.",
+    username: process.env.VM_DEFAULT_USERNAME ?? "shipwrights",
+    password: process.env.VM_DEFAULT_PASSWORD ?? "shipwrights",
   },
 ] as const;

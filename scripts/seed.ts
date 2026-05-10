@@ -27,6 +27,8 @@ async function main() {
           defaultPort: vmType.defaultPort,
           enabled: vmType.enabled,
           description: vmType.description,
+          username: vmType.username,
+          password: vmType.password,
         },
       });
   }

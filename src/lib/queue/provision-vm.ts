@@ -31,6 +31,8 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
     .set({ state: "provisioning", updatedAt: new Date() })
     .where(eq(vmSessions.id, sessionId));
 
+  publish({ type: "state_change", state: "provisioning", sessionId });
+
   await db.insert(vmSessionEvents).values({
     vmSessionId: sessionId,
     kind: "clone_started",
@@ -55,8 +57,8 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
   let guacamolePasswordCiphertext: string | undefined;
 
   try {
-    const newVmid = await proxmox.getNextVmid();
-    const vmName = `payload-${sessionId}`;
+    const newVmid = await allocateVmid();
+    const vmName = `payload-vm-${vmType.slug}`;
 
     await db
       .update(vmSessions)
@@ -116,6 +118,13 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
             security: "tls",
             "disable-auth": "false",
             "resize-method": "display-update",
+            "color-depth": "24",
+            "enable-wallpaper": "true",
+            "enable-theming": "true",
+            "enable-font-smoothing": "true",
+            "enable-full-window-drag": "true",
+            "enable-desktop-composition": "true",
+            "enable-menu-animations": "true",
             "disable-copy": "false",
             "disable-paste": "false",
           }
@@ -164,7 +173,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
       payload: { ip: vmIp, guacamoleConnectionId },
     });
 
-    publish({ type: "ready", sessionId, data: { ip: vmIp } });
+    publish({ type: "ready", state: "ready", sessionId, data: { ip: vmIp } });
   } catch (error) {
     await db
       .update(vmSessions)
@@ -180,7 +189,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
       },
     });
 
-    publish({ type: "errored", sessionId });
+    publish({ type: "errored", state: "errored", sessionId });
 
     if (guacamoleConnectionId || guacamoleUsername) {
       if (guacamoleConnectionId) {
@@ -193,4 +202,17 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
 
     throw error;
   }
+}
+
+async function allocateVmid(): Promise<number> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const suffix = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+    const candidate = Number(`69${suffix}`);
+    const existing = await db.query.vmSessions.findFirst({
+      where: eq(vmSessions.proxmoxVmid, candidate),
+      columns: { id: true },
+    });
+    if (!existing) return candidate;
+  }
+  throw new Error("Could not generate unique VMID after 10 attempts");
 }

@@ -20,55 +20,67 @@ export async function GET(
     return NextResponse.json({ error: "Invalid session ID" }, { status: 400 });
   }
 
-  const session = await db.query.vmSessions.findFirst({
-    where: eq(vmSessions.id, sessionId),
-  });
-
-  if (!session || session.userId !== authResult.userId) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
   const stream = new ReadableStream({
-    start(controller) {
+    async start(controller) {
       const encoder = new TextEncoder();
+      let initialSent = false;
 
       const send = (event: SSEEvent | { type: string; state: string; sessionId: number }) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch {
+          // stream closed
+        }
       };
 
-      // Send initial state
-      send({ type: "state_change", state: session.state, sessionId });
-
-      // Close if already terminated
-      if (session.state === "terminated" || session.state === "errored") {
-        controller.close();
-        return;
-      }
-
+      // Subscribe FIRST via Redis pub/sub to avoid losing events
+      // published between the DB read and subscribe (race condition).
       const unsubscribe = subscribe(sessionId, (event) => {
-        send(event);
-        if (event.type === "terminated" || event.type === "errored") {
-          unsubscribe();
-          controller.close();
+        if (initialSent) {
+          send(event);
+          if (event.type === "terminated" || event.type === "errored") {
+            unsubscribe();
+            clearInterval(interval);
+            try { controller.close(); } catch { /* ignore */ }
+          }
         }
       });
 
-      // Cleanup on client disconnect
       const interval = setInterval(() => {
         try {
-          controller.enqueue(encoder.encode(`: keepalive\n\n`));
+          controller.enqueue(encoder.encode(": keepalive\n\n"));
         } catch {
           unsubscribe();
           clearInterval(interval);
         }
       }, 15_000);
 
-      // We rely on the AbortSignal to clean up
-      _request.signal.addEventListener("abort", () => {
+      const teardown = () => {
         unsubscribe();
         clearInterval(interval);
-        controller.close();
+        try { controller.close(); } catch { /* ignore */ }
+      };
+
+      _request.signal.addEventListener("abort", teardown);
+
+      // Now read the DB — any event published between subscribe and this
+      // read arrives via Redis and is buffered until initialSent is true.
+      const session = await db.query.vmSessions.findFirst({
+        where: eq(vmSessions.id, sessionId),
       });
+
+      if (!session || session.userId !== authResult.userId) {
+        teardown();
+        return;
+      }
+
+      send({ type: "state_change", state: session.state, sessionId });
+      initialSent = true;
+
+      if (session.state === "terminated" || session.state === "errored") {
+        teardown();
+        return;
+      }
     },
   });
 

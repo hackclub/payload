@@ -44,11 +44,8 @@ export default function SessionClient({
         if (data.state) {
           setState(data.state);
         }
-        if (data.type === "ready" || data.type === "state_change") {
-          if (data.state) setState(data.state);
-        }
-        if (data.type === "terminated" || data.type === "errored" || data.type === "terminating") {
-          if (data.state) setState(data.type === "terminating" ? "terminating" : data.type === "terminated" ? "terminated" : "errored");
+        if (data.type === "terminated" || data.type === "errored" || data.state === "terminated" || data.state === "errored") {
+          eventSource.close();
         }
       } catch {
         // keepalive or malformed, ignore
@@ -56,7 +53,9 @@ export default function SessionClient({
     };
 
     eventSource.onerror = () => {
-      eventSource.close();
+      // Do NOT call close() here — the browser auto-reconnects on transient errors.
+      // Terminal states (terminated/errored) are handled in onmessage above.
+      // If the server intentionally closed the stream, onmessage already called close().
     };
 
     return () => {
@@ -184,6 +183,26 @@ export default function SessionClient({
             onClick={async () => {
               if (confirm("Are you sure? All data in this VM will be permanently deleted.")) {
                 await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+                // Wait for the SSE "terminated" event before navigating away
+                // so the dashboard sees the session as already terminated.
+                const terminatedPromise = new Promise<void>((resolve) => {
+                  const es = new EventSource(`/api/sessions/${sessionId}/events`);
+                  es.onmessage = (evt) => {
+                    try {
+                      const d = JSON.parse(evt.data);
+                      if (d.state === "terminated" || d.type === "terminated") {
+                        es.close();
+                        resolve();
+                      }
+                    } catch {}
+                  };
+                  es.onerror = () => {
+                    // Fallback: if SSE fails, navigate after a short delay
+                    es.close();
+                    setTimeout(resolve, 2000);
+                  };
+                });
+                await terminatedPromise;
                 window.location.href = "/";
               }
             }}
