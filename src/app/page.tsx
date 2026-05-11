@@ -6,6 +6,7 @@ import Link from "next/link";
 import { createUserSession } from "@/lib/sessions";
 import { redirect } from "next/navigation";
 import { vmTypeSeeds } from "@/config/vm-types";
+import DashboardLive from "./DashboardLive";
 
 type UserWithSlackId = {
   slackId?: string | null;
@@ -105,8 +106,13 @@ export default async function Dashboard() {
     where: eq(vmTypes.enabled, true),
   });
 
+  const watchedSessions = userSessions
+    .filter((s) => s.state !== "terminated" && s.state !== "errored")
+    .map((s) => ({ id: s.id, state: s.state }));
+
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
+      <DashboardLive sessions={watchedSessions} />
       <div className="mb-10">
         <h1 className="text-4xl font-bold mb-2 text-hc-snow">My Sessions</h1>
         <p className="text-hc-muted text-lg">Your VMs for reviewing Hack Club projects.</p>
