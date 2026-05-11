@@ -199,7 +199,7 @@ export default async function Dashboard() {
                         <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                       </div>
                     </div>
-                    <p className="text-sm text-hc-muted mt-auto leading-relaxed">Click to provision a new instance of this environment.</p>
+                    <p className="text-sm text-hc-muted mt-auto leading-relaxed">{seedConfig?.description ?? "Click to provision a new instance of this environment."}</p>
                   </button>
                 </form>
                 );

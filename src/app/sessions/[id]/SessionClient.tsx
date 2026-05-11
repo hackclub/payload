@@ -301,7 +301,7 @@ export default function SessionClient({
                 Setting up your VM
               </p>
               <p className="text-sm text-hc-muted">
-                Patience is key vro   
+                This should only take a few moments.
               </p>
             </div>
           </div>
