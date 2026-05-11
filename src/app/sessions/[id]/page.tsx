@@ -4,6 +4,7 @@ import { vmSessions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import SessionClient from "./SessionClient";
+import { vmTypeSeeds } from "@/config/vm-types";
 
 export default async function SessionPage({
   params,
@@ -28,12 +29,15 @@ export default async function SessionPage({
 
   const state = vmSession.state;
   const vmTypeName = vmSession.vmType?.displayName ?? "VM";
+  const seedConfig = vmTypeSeeds.find((s) => s.slug === vmSession.vmType?.slug);
+  const vmIcon = seedConfig?.iconUrl ?? null;
 
   return (
     <SessionClient
       sessionId={sessionId}
       initialState={state}
       vmTypeName={vmTypeName}
+      vmIcon={vmIcon}
       expiresAt={vmSession.expiresAt.toISOString()}
       terminationReason={vmSession.terminationReason ?? undefined}
     />

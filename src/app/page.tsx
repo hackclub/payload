@@ -109,7 +109,7 @@ export default async function Dashboard() {
     <div className="space-y-12 animate-in fade-in duration-500">
       <div className="mb-10">
         <h1 className="text-4xl font-bold mb-2 text-hc-snow">My Sessions</h1>
-        <p className="text-hc-muted text-lg">Your sandboxes for reviewing Hack Club projects.</p>
+        <p className="text-hc-muted text-lg">Your VMs for reviewing Hack Club projects.</p>
       </div>
 
       <section>
@@ -170,9 +170,9 @@ export default async function Dashboard() {
         {activeSessions.length < 2 && enabledVmTypes.length > 0 && (
           <div className="space-y-4 pt-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-hc-darkless pb-4 mb-6 gap-4">
-              <h2 className="text-2xl font-bold text-hc-smoke">Launch a Sandbox</h2>
+              <h2 className="text-2xl font-bold text-hc-smoke">Launch a VM</h2>
               <span className="text-sm text-hc-muted font-medium bg-hc-darker px-3 py-1 rounded-full border border-hc-darkless whitespace-nowrap w-fit">
-                {2 - activeSessions.length} of 2 slots available
+                {2 - activeSessions.length} of 2 active VMs available
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

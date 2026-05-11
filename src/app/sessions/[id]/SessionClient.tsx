@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Clock, ArrowLeft, AlertTriangle } from "lucide-react";
+import { Clock, ArrowLeft, AlertTriangle, Terminal, Maximize2, Minimize2, Menu, X } from "lucide-react";
 import Link from "next/link";
 
 type SessionClientProps = {
   sessionId: number;
   initialState: string;
   vmTypeName: string;
+  vmIcon: string | null;
   expiresAt: string;
   terminationReason?: string;
 };
@@ -26,13 +27,25 @@ export default function SessionClient({
   sessionId,
   initialState,
   vmTypeName,
+  vmIcon,
   expiresAt,
   terminationReason,
 }: SessionClientProps) {
   const [state, setState] = useState(initialState);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState("");
+  const [isUiVisible, setIsUiVisible] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showDestroyConfirm, setShowDestroyConfirm] = useState(false);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   // SSE listener
   useEffect(() => {
@@ -153,98 +166,154 @@ export default function SessionClient({
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-10rem)] space-y-4 animate-in fade-in duration-300">
-      <div className="bg-hc-dark border border-hc-darkless rounded-hc p-3 flex flex-col sm:flex-row sm:items-center justify-between shadow-sm gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-hc-muted hover:text-hc-smoke hover:bg-hc-darkless px-3 py-1.5 rounded transition-colors text-sm font-bold">
-            <ArrowLeft className="w-4 h-4 inline mr-1" /> Back
+    <div className="fixed inset-0 z-50 flex bg-black animate-in fade-in duration-300">
+      {/* Top-left toggle button */}
+      <button
+        onClick={() => setIsUiVisible(!isUiVisible)}
+        className={`absolute top-3 left-3 z-60  hover:bg-black/60 p-1.5 rounded-md  hover:text-white/90 transition-all duration-300 backdrop-blur-sm ${isUiVisible ? 'opacity-100 bg-black/60 text-white/90' : 'opacity-30 hover:opacity-100 bg-black/20 text-white/30'}`}
+        title={isUiVisible ? "Hide UI" : "Show UI"}
+      >
+        {isUiVisible ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+      </button>
+
+      {/* Floating Island UI */}
+      <div 
+        className={`absolute left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-in-out flex flex-col items-center top-4 ${isUiVisible ? 'translate-y-0 opacity-100 visible' : '-translate-y-24 opacity-0 invisible'}`}
+      >
+        <div className={`flex items-center gap-4 bg-hc-dark/80 backdrop-blur-md border border-hc-darkless/50 shadow-2xl rounded-full px-4 py-2`}>
+          <Link href="/" className="text-hc-muted hover:text-hc-smoke rounded-full transition-colors p-1" title="Back to Dashboard">
+            <ArrowLeft className="w-5 h-5" />
           </Link>
-          <div className="w-px h-5 bg-hc-darkless"></div>
+          
+          <div className="w-px h-5 bg-hc-darkless/50"></div>
+
           <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-hc-blue" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
+            {vmIcon ? <img src={vmIcon} alt={vmTypeName} className="w-4 h-4 object-contain" /> : <Terminal className="w-4 h-4 text-hc-blue" />}
             <span className="font-bold text-sm text-hc-smoke">{vmTypeName}</span>
           </div>
-          <span className={`${info.bg} ${info.color} font-bold text-xs px-2.5 py-1 rounded-full border flex items-center gap-1.5 ml-2`}>
+
+          <span className={`${info.bg} ${info.color} font-bold text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1.5 ml-2`}>
             {isActive && <span className="w-1.5 h-1.5 rounded-full bg-hc-green animate-pulse"></span>}
             {info.label}
           </span>
-        </div>
 
-        <div className="flex items-center gap-6 self-end sm:self-auto">
-          <div className="flex items-center gap-2 text-hc-yellow text-sm font-mono tracking-tight bg-hc-darker px-3 py-1 rounded border border-hc-darkless">
-            <Clock className="w-4 h-4" />
-            <span>{timeRemaining}</span>
+          <div className="flex items-center gap-1.5 text-sm font-mono tracking-tight bg-hc-darker/50 px-2 py-0.5 rounded border border-hc-darkless/30 ml-2">
+            <Clock className="w-3.5 h-3.5" />
+            <span className={timeRemaining === "Expired" ? "text-hc-red" : ""}>{timeRemaining}</span>
           </div>
+
+          <div className="w-px h-5 bg-hc-darkless/50 ml-2"></div>
+
           <button
-            onClick={async () => {
-              if (confirm("Are you sure? All data in this VM will be permanently deleted.")) {
-                await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
-                // Wait for the SSE "terminated" event before navigating away
-                // so the dashboard sees the session as already terminated.
-                const terminatedPromise = new Promise<void>((resolve) => {
-                  const es = new EventSource(`/api/sessions/${sessionId}/events`);
-                  es.onmessage = (evt) => {
-                    try {
-                      const d = JSON.parse(evt.data);
-                      if (d.state === "terminated" || d.type === "terminated") {
-                        es.close();
-                        resolve();
-                      }
-                    } catch {}
-                  };
-                  es.onerror = () => {
-                    // Fallback: if SSE fails, navigate after a short delay
-                    es.close();
-                    setTimeout(resolve, 2000);
-                  };
-                });
-                await terminatedPromise;
-                window.location.href = "/";
+            onClick={() => {
+              if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+              } else {
+                document.exitFullscreen().catch(() => {});
               }
             }}
-            className="bg-transparent border border-transparent hover:border-hc-red/50 text-hc-muted hover:text-hc-red transition-colors flex items-center px-4 py-1.5 rounded text-sm font-bold"
+            className="text-hc-muted hover:text-hc-smoke transition-colors p-1"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+
+          <button
+            onClick={() => setShowDestroyConfirm(true)}
+            className="bg-transparent hover:bg-hc-red/10 text-hc-muted hover:text-hc-red transition-colors px-3 py-1 rounded-full text-xs font-bold ml-1"
           >
             Destroy
           </button>
         </div>
       </div>
 
-      {/* Iframe / Provisioning area */}
-      <div className="flex-1 bg-black rounded-hc overflow-hidden border border-hc-darkless relative shadow-inner">
+      {/* Destroy Confirmation Modal */}
+      {showDestroyConfirm && (
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setShowDestroyConfirm(false)}
+          />
+          <div className="bg-hc-dark/80 backdrop-blur-xl border border-hc-darkless rounded-hc p-6 max-w-sm w-full shadow-2xl relative z-10 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-hc-red mb-4">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="text-xl font-bold">Destroy Session?</h3>
+            </div>
+            <p className="text-hc-smoke mb-6">
+              All data in this VM will be <span className="text-hc-red font-bold underline">permanently deleted</span>
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDestroyConfirm(false)}
+                className="flex-1 bg-hc-darkless hover:bg-hc-slate text-hc-smoke font-bold py-2 px-4 rounded transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setShowDestroyConfirm(false);
+                  await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+                  const terminatedPromise = new Promise<void>((resolve) => {
+                    const es = new EventSource(`/api/sessions/${sessionId}/events`);
+                    es.onmessage = (evt) => {
+                      try {
+                        const d = JSON.parse(evt.data);
+                        if (d.state === "terminated" || d.type === "terminated") {
+                          es.close();
+                          resolve();
+                        }
+                      } catch {}
+                    };
+                    es.onerror = () => {
+                      es.close();
+                      setTimeout(resolve, 2000);
+                    };
+                  });
+                  await terminatedPromise;
+                  window.location.href = "/";
+                }}
+                className="flex-1 bg-hc-red hover:bg-[#d82a41] text-white font-bold py-2 px-4 rounded transition-colors"
+              >
+                Bye Bye VM
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main content area (iframe) */}
+      <div className="relative flex-1 bg-black overflow-hidden flex items-center justify-center">
         {isActive && iframeUrl ? (
           <iframe
             src={iframeUrl}
             className="w-full h-full border-0"
-            allow="clipboard-read; clipboard-write"
+            allow="clipboard-read; clipboard-write; fullscreen"
             title="Remote Desktop"
           />
         ) : isPending ? (
-          <div className="absolute inset-0 flex items-center justify-center text-hc-muted">
-            <div className="text-center">
-              <div className="w-6 h-6 border-2 border-hc-cyan border-t-transparent rounded-full animate-spin mb-3 mx-auto"></div>
-              <p className="font-mono text-sm">
-                <span className="text-hc-blue">$ </span>
-                provisioning your VM...
+          <div className="flex flex-col items-center gap-5 animate-in fade-in duration-700">
+            <div className="relative w-10 h-10">
+              <div className="absolute inset-0 border-2 border-hc-blue/10 rounded-full"></div>
+              <div className="absolute inset-0 border-2 border-hc-blue border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <div className="text-center space-y-1.5">
+              <p className="text-lg font-bold text-hc-snow tracking-tight">
+                Setting up your VM
+              </p>
+              <p className="text-sm text-hc-muted">
+                Patience is key vro   
               </p>
             </div>
           </div>
         ) : state === "terminating" ? (
-          <div className="absolute inset-0 flex items-center justify-center text-hc-orange">
-            <div className="text-center">
-              <div className="w-6 h-6 border-2 border-hc-orange border-t-transparent rounded-full animate-spin mb-3 mx-auto"></div>
-              <p className="font-mono text-sm">Terminating session...</p>
-            </div>
+          <div className="flex flex-col items-center gap-4 animate-in fade-in duration-500">
+            <div className="w-6 h-6 border-2 border-hc-muted/20 border-t-hc-muted rounded-full animate-spin"></div>
+            <p className="text-base font-medium text-hc-muted">Closing VM...</p>
           </div>
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-hc-muted">
-            <p className="font-mono text-sm max-w-sm text-center">
-              <span className="text-hc-blue">$ </span>
-              connecting to session {sessionId}...
-            </p>
+          <div className="flex flex-col items-center gap-4 animate-in fade-in duration-500">
+            <div className="w-6 h-6 border-2 border-hc-blue/20 border-t-hc-blue rounded-full animate-spin"></div>
+            <p className="text-base font-medium text-hc-muted">Initializing connection...</p>
           </div>
         )}
       </div>
