@@ -13,14 +13,15 @@ type SessionClientProps = {
   terminationReason?: string;
 };
 
-const STATE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  pending: { label: "Starting...", color: "text-hc-yellow", bg: "bg-hc-yellow/10 border-hc-yellow/20" },
-  provisioning: { label: "Provisioning...", color: "text-hc-yellow", bg: "bg-hc-yellow/10 border-hc-yellow/20" },
-  ready: { label: "Ready", color: "text-hc-green", bg: "bg-hc-green/10 border-hc-green/20" },
-  active: { label: "Running", color: "text-hc-green", bg: "bg-hc-green/10 border-hc-green/20" },
-  terminating: { label: "Terminating...", color: "text-hc-orange", bg: "bg-hc-orange/10 border-hc-orange/20" },
-  terminated: { label: "Ended", color: "text-hc-muted", bg: "bg-hc-darker border-hc-darkless" },
-  errored: { label: "Error", color: "text-hc-red", bg: "bg-hc-red/10 border-hc-red/20" },
+// Status labels for hover tooltips
+const STATE_LABELS: Record<string, string> = {
+  pending: "Starting...",
+  provisioning: "Provisioning...",
+  ready: "Ready",
+  active: "Running",
+  terminating: "Terminating...",
+  terminated: "Ended",
+  errored: "Error",
 };
 
 export default function SessionClient({
@@ -176,10 +177,26 @@ export default function SessionClient({
     return () => clearInterval(interval);
   }, [expiresAt]);
 
-  const info = STATE_LABELS[state] ?? { label: state, color: "text-hc-muted", bg: "bg-hc-darker border-hc-darkless" };
-  const isActive = ["ready", "active"].includes(state);
+  const getStatusColor = (s: string) => {
+    switch (s) {
+      case "ready":
+      case "active":
+        return "bg-hc-green";
+      case "pending":
+      case "provisioning":
+        return "bg-hc-yellow";
+      case "terminating":
+        return "bg-hc-orange";
+      case "errored":
+        return "bg-hc-red";
+      default:
+        return "bg-hc-muted";
+    }
+  };
+
   const isPending = ["pending", "provisioning"].includes(state);
   const isEnded = ["terminated", "errored"].includes(state);
+  const isActive = ["ready", "active"].includes(state);
 
   if (isEnded) {
     return (
@@ -229,17 +246,13 @@ export default function SessionClient({
           <div className="w-px h-5 bg-hc-darkless/50"></div>
 
           <div className="flex items-center gap-2">
-            {vmIcon ? <img src={vmIcon} alt={vmTypeName} className="w-4 h-4 object-contain" /> : <Terminal className="w-4 h-4 text-hc-blue" />}
+            {vmIcon ? <img src={vmIcon} alt={vmTypeName} className="w-4 h-4 object-contain opacity-80" /> : <Terminal className="w-4 h-4 text-hc-muted" />}
             <span className="font-bold text-sm text-hc-smoke">{vmTypeName}</span>
+            <span className={`w-2 h-2 rounded-full ml-1 ${getStatusColor(state)}`} title={STATE_LABELS[state] || state}></span>
           </div>
 
-          <span className={`${info.bg} ${info.color} font-bold text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1.5 ml-2`}>
-            {isActive && <span className="w-1.5 h-1.5 rounded-full bg-hc-green animate-pulse"></span>}
-            {info.label}
-          </span>
-
-          <div className="flex items-center gap-1.5 text-sm font-mono tracking-tight bg-hc-darker/50 px-2 py-0.5 rounded border border-hc-darkless/30 ml-2">
-            <Clock className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-1.5 text-sm font-mono tracking-tight text-hc-muted ml-2">
+            <Clock className="w-3.5 h-3.5 opacity-50" />
             <span className={timeRemaining === "Expired" ? "text-hc-red" : ""}>{timeRemaining}</span>
           </div>
 
@@ -341,8 +354,8 @@ export default function SessionClient({
         ) : isPending ? (
           <div className="flex flex-col items-center gap-5 animate-in fade-in duration-700">
             <div className="relative w-10 h-10">
-              <div className="absolute inset-0 border-2 border-hc-blue/10 rounded-full"></div>
-              <div className="absolute inset-0 border-2 border-hc-blue border-t-transparent rounded-full animate-spin"></div>
+              <div className="absolute inset-0 border-[3px] border-hc-red/20 rounded-full"></div>
+              <div className="absolute inset-0 border-[3px] border-hc-red border-t-transparent rounded-full animate-spin"></div>
             </div>
             <div className="text-center space-y-1.5">
               <p className="text-lg font-bold text-hc-snow tracking-tight">
@@ -354,13 +367,19 @@ export default function SessionClient({
             </div>
           </div>
         ) : state === "terminating" ? (
-          <div className="flex flex-col items-center gap-4 animate-in fade-in duration-500">
-            <div className="w-6 h-6 border-2 border-hc-muted/20 border-t-hc-muted rounded-full animate-spin"></div>
+          <div className="flex flex-col items-center gap-5 animate-in fade-in duration-500">
+            <div className="relative w-10 h-10">
+              <div className="absolute inset-0 border-[3px] border-hc-red/20 rounded-full"></div>
+              <div className="absolute inset-0 border-[3px] border-hc-red border-t-transparent rounded-full animate-spin"></div>
+            </div>
             <p className="text-base font-medium text-hc-muted">Closing VM...</p>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-4 animate-in fade-in duration-500">
-            <div className="w-6 h-6 border-2 border-hc-blue/20 border-t-hc-blue rounded-full animate-spin"></div>
+          <div className="flex flex-col items-center gap-5 animate-in fade-in duration-500">
+            <div className="relative w-10 h-10">
+              <div className="absolute inset-0 border-[3px] border-hc-red/20 rounded-full"></div>
+              <div className="absolute inset-0 border-[3px] border-hc-red border-t-transparent rounded-full animate-spin"></div>
+            </div>
             <p className="text-base font-medium text-hc-muted">Initializing connection...</p>
           </div>
         )}
