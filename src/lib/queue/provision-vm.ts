@@ -131,6 +131,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
         : {
             hostname: vmIp,
             port: String(vmType.defaultPort),
+            ...(vmUsername ? { username: vmUsername } : {}),
             password: vmPassword,
             "color-depth": "24",
             "disable-copy": "false",

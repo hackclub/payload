@@ -41,4 +41,18 @@ export const vmTypeSeeds = [
         iconUrl:
             "https://cdn.hackclub.com/019e129d-bb06-7cbd-bc0f-b5ae86029a35/devicon--android.png",
     },
+    {
+        slug: "macos",
+        displayName: "MacOS",
+        proxmoxTemplateVmid: 67005,
+        proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
+        protocol: "vnc",
+        defaultPort: 5900,
+        enabled: true,
+        description: "MacOS Sequioa (15)",
+        username: "shipwrights",
+        password: "shipwrights",
+        iconUrl:
+            "https://cdn.hackclub.com/019e129d-b89d-708b-a515-d8979405d1a8/ic--baseline-apple.png",
+    },
 ] as const;
