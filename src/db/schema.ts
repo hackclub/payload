@@ -58,6 +58,11 @@ export const reviewerAllowlistEntries = pgTable("reviewer_allowlist_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const adminEntries = pgTable("admin_entries", {
+  slackId: text("slack_id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const vmTypes = pgTable("vm_types", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   slug: text("slug").notNull().unique(),

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
+import AdminButton from "@/components/AdminButton";
 import { FlyonUIInit } from "@/components/FlyonUIInit";
 
 const inter = Inter({
@@ -30,11 +32,12 @@ export default function RootLayout({
         <FlyonUIInit />
         <nav className="bg-hc-dark border-b border-hc-darkless px-6 py-4 flex items-center justify-between shadow-sm">
           <div className="flex items-center">
-             <span className="text-2xl font-bold tracking-tight text-hc-red ">Payload</span>
+             <Link className="text-2xl font-bold tracking-tight text-hc-red" href="/">Payload</Link>
           </div>
-          <div className="flex items-center">
-             <UserMenu />
-          </div>
+           <div className="flex items-center gap-3">
+              <AdminButton />
+              <UserMenu />
+           </div>
         </nav>
         <main className="flex-1 max-w-4xl mx-auto w-full py-12 px-6">
           {children}

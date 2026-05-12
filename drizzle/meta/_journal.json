@@ -43,6 +43,13 @@
       "when": 1778591070616,
       "tag": "0005_add_vm_types_boot_delay",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778591855165,
+      "tag": "0006_bent_electro",
+      "breakpoints": true
     }
   ]
 }

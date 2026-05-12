@@ -1,12 +1,20 @@
 import "dotenv/config";
 import { db } from "../src/db";
 import { vmTypeSeeds } from "../src/config/vm-types";
-import { reviewerAllowlistEntries, vmTypes } from "../src/db/schema";
+import { reviewerAllowlistEntries, vmTypes, adminEntries } from "../src/db/schema";
 
 async function main() {
   console.log("Seeding allowlist...");
   await db
     .insert(reviewerAllowlistEntries)
+    .values({
+      slackId: "U084UQFF0LC",
+    })
+    .onConflictDoNothing();
+
+  console.log("Seeding admins...");
+  await db
+    .insert(adminEntries)
     .values({
       slackId: "U084UQFF0LC",
     })
