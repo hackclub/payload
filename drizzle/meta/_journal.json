@@ -36,6 +36,13 @@
       "when": 1778479509091,
       "tag": "0004_add_vm_types_icon_url",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778591070616,
+      "tag": "0005_add_vm_types_boot_delay",
+      "breakpoints": true
     }
   ]
 }

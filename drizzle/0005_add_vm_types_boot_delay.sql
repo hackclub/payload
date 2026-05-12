@@ -1,0 +1,1 @@
+ALTER TABLE "vm_types" ADD COLUMN "boot_delay_ms" integer DEFAULT 0 NOT NULL;

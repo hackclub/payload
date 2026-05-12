@@ -30,6 +30,7 @@ async function main() {
           username: vmType.username,
           password: vmType.password,
           iconUrl: vmType.iconUrl,
+          bootDelayMs: vmType.bootDelayMs,
         },
       });
   }

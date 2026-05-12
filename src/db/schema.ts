@@ -71,6 +71,10 @@ export const vmTypes = pgTable("vm_types", {
   username: text("username"),
   password: text("password"),
   iconUrl: text("icon_url"),
+  // Extra wait, in milliseconds, between IP discovery and the Guacamole
+  // connection being created. Used for VMs (e.g. Android) whose remote
+  // display server only starts after the OS finishes booting.
+  bootDelayMs: integer("boot_delay_ms").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

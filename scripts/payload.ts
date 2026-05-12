@@ -105,6 +105,7 @@ async function seedVmTypes() {
           username: vmType.username,
           password: vmType.password,
           iconUrl: vmType.iconUrl,
+          bootDelayMs: vmType.bootDelayMs,
         },
       });
   }
@@ -248,7 +249,14 @@ function waitForEnterOrSignal(): Promise<void> {
   });
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    // The postgres-js pool (and any other long-lived handles like ioredis)
+    // keep the event loop alive forever, so without an explicit exit the
+    // CLI hangs even after the requested command finished successfully.
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

@@ -96,6 +96,14 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
       payload: { ip: vmIp },
     });
 
+    // Some VMs (e.g. Android booting droidVNC-NG) only start their remote
+    // display server *after* the OS finishes booting and an IP appears.
+    // `bootDelayMs` is configured per VM type so the Guacamole handshake
+    // doesn't race the display server's startup.
+    if (vmType.bootDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, vmType.bootDelayMs));
+    }
+
     guacamoleUsername = `payload-${sessionId}`;
     const guacamolePassword = randomBytes(18).toString("base64url");
 
