@@ -30,7 +30,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientSecret: env.HACKCLUB_OIDC_CLIENT_SECRET,
       authorization: {
         params: {
-          scope: "openid profile email slack_id",
+          scope: "openid slack_id",
           ...(env.HACKCLUB_OIDC_REDIRECT_URI
             ? { redirect_uri: env.HACKCLUB_OIDC_REDIRECT_URI }
             : {}),

@@ -14,13 +14,15 @@ Source: <https://auth.hackclub.com/docs/oidc-guide>
 ## Scopes Payload requests
 
 ```
-openid profile email slack_id
+openid slack_id
 ```
 
 - `openid` -> `sub`, e.g. `ident!abc123`
-- `profile` -> `name`, `given_name`, `family_name`, `nickname`
-- `email` -> `email`, `email_verified`
 - `slack_id` -> key claim for allowlist, e.g. `U0123ABC`
+
+`profile` and `email` scopes are omitted because Payload only needs `slack_id`
+for access verification. Display name and avatar are fetched from Cachet via
+`slack_id` after login.
 
 Community-app scope ceiling is `openid profile email name slack_id verification_status`.
 Payload stays within that.
