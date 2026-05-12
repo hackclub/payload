@@ -46,10 +46,20 @@ export default function SessionClient({
   // Focus the iframe so keystrokes reach the embedded Guacamole client.
   // Without this, clicks on the parent page (floating UI buttons, etc.)
   // steal keyboard focus and the remote VM stops receiving keys.
+  //
+  // IMPORTANT: never call this synchronously while a mouse button is being
+  // pressed inside the iframe (esp. right-click). Re-focusing the
+  // contentWindow mid-mousedown breaks Guacamole's event capture: the
+  // matching mouseup is lost (so the VM thinks the button is still held)
+  // and the browser's native context menu leaks through because Guacamole's
+  // `contextmenu` preventDefault never runs.
   const focusIframe = useCallback(() => {
     if (showDestroyConfirmRef.current) return;
     const iframe = iframeRef.current;
     if (!iframe) return;
+    // Avoid redundant focus() calls — they're not free and can interrupt
+    // event delivery inside the iframe.
+    if (document.activeElement === iframe) return;
     iframe.focus();
     try {
       iframe.contentWindow?.focus();
@@ -338,9 +348,20 @@ export default function SessionClient({
       {/* Main content area (iframe) */}
       <div
         className="relative flex-1 bg-black overflow-hidden flex items-center justify-center"
-        // Refocus the iframe whenever the user clicks into the iframe area.
-        // mousedown (not mouseenter) so we don't steal focus on hover.
-        onMouseDown={() => focusIframe()}
+        // Refocus the iframe when the user clicks back into the iframe area
+        // (e.g. after interacting with the floating UI). We deliberately:
+        //   * only react to the primary (left) button — refocusing during a
+        //     right- or middle-click mousedown breaks Guacamole's event
+        //     capture and causes the browser's native context menu to leak
+        //     through and the right-button to appear "stuck" in the VM.
+        //   * defer to mouseup (after the click is over) so we never shift
+        //     focus mid-click.
+        //   * skip if the iframe is already focused (focusIframe handles
+        //     that, but cheap to short-circuit here too).
+        onMouseUp={(e) => {
+          if (e.button !== 0) return;
+          focusIframe();
+        }}
       >
         {isActive && iframeUrl ? (
           <iframe
