@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Clock, ArrowLeft, AlertTriangle, Terminal, Maximize2, Minimize2, Menu, X } from "lucide-react";
 import Link from "next/link";
 
@@ -38,6 +38,24 @@ export default function SessionClient({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showDestroyConfirm, setShowDestroyConfirm] = useState(false);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const showDestroyConfirmRef = useRef(showDestroyConfirm);
+  showDestroyConfirmRef.current = showDestroyConfirm;
+
+  // Focus the iframe so keystrokes reach the embedded Guacamole client.
+  // Without this, clicks on the parent page (floating UI buttons, etc.)
+  // steal keyboard focus and the remote VM stops receiving keys.
+  const focusIframe = useCallback(() => {
+    if (showDestroyConfirmRef.current) return;
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    iframe.focus();
+    try {
+      iframe.contentWindow?.focus();
+    } catch {
+      // cross-origin (shouldn't happen for same-origin /guac, but be safe)
+    }
+  }, []);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -120,6 +138,25 @@ export default function SessionClient({
     };
   }, [state, sessionId]);
 
+  // Re-focus the iframe whenever the window/tab regains focus or visibility.
+  useEffect(() => {
+    if (!iframeUrl) return;
+    const onWindowFocus = () => focusIframe();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") focusIframe();
+    };
+    window.addEventListener("focus", onWindowFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onWindowFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [iframeUrl, focusIframe]);
+
+  useEffect(() => {
+    if (!showDestroyConfirm) focusIframe();
+  }, [showDestroyConfirm, focusIframe]);
+
   // Countdown timer
   useEffect(() => {
     const update = () => {
@@ -179,6 +216,10 @@ export default function SessionClient({
       {/* Floating Island UI */}
       <div 
         className={`absolute left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-in-out flex flex-col items-center top-4 ${isUiVisible ? 'translate-y-0 opacity-100 visible' : '-translate-y-24 opacity-0 invisible'}`}
+        // After interacting with floating UI buttons (which take focus away
+        // from the iframe), refocus the iframe so keystrokes resume going
+        // to the VM. setTimeout lets the click's own handler run first.
+        onClick={() => setTimeout(focusIframe, 0)}
       >
         <div className={`flex items-center gap-4 bg-hc-dark/80 backdrop-blur-md border border-hc-darkless/50 shadow-2xl rounded-full px-4 py-2`}>
           <Link href="/" className="text-hc-muted hover:text-hc-smoke rounded-full transition-colors p-1" title="Back to Dashboard">
@@ -282,13 +323,20 @@ export default function SessionClient({
       )}
 
       {/* Main content area (iframe) */}
-      <div className="relative flex-1 bg-black overflow-hidden flex items-center justify-center">
+      <div
+        className="relative flex-1 bg-black overflow-hidden flex items-center justify-center"
+        // Refocus the iframe whenever the user clicks into the iframe area.
+        // mousedown (not mouseenter) so we don't steal focus on hover.
+        onMouseDown={() => focusIframe()}
+      >
         {isActive && iframeUrl ? (
           <iframe
+            ref={iframeRef}
             src={iframeUrl}
             className="w-full h-full border-0"
             allow="clipboard-read; clipboard-write; fullscreen"
             title="Remote Desktop"
+            onLoad={focusIframe}
           />
         ) : isPending ? (
           <div className="flex flex-col items-center gap-5 animate-in fade-in duration-700">
