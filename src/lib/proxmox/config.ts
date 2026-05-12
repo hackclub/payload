@@ -1,4 +1,5 @@
 import { ProxmoxClient } from "./client";
+import { env } from "../../env";
 
 export type ProxmoxConfig = {
   host: string;
@@ -15,36 +16,24 @@ export type ProxmoxConfig = {
   sshPort: number;
 };
 
-export function getProxmoxConfig(env: NodeJS.ProcessEnv = process.env): ProxmoxConfig {
-  const host = requiredEnv(env, "PROXMOX_HOST");
-  const port = numberEnv(env, "PROXMOX_PORT", 8006);
-  const verifyTls = booleanEnv(env, "PROXMOX_VERIFY_TLS", true);
-  const tokenId = requiredEnv(env, "PROXMOX_TOKEN_ID");
-
-  if (!verifyTls) {
+export function getProxmoxConfig(): ProxmoxConfig {
+  if (!env.PROXMOX_VERIFY_TLS) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   }
 
-  if (!/^[^@\s]+@[^!\s]+![^!\s]+$/.test(tokenId)) {
-    throw new Error(
-      "PROXMOX_TOKEN_ID must be the full Proxmox API token id, for example " +
-        "`payload@pve!payload` or `root@pam!payload`. The token name alone is not enough.",
-    );
-  }
-
   return {
-    host,
-    port,
-    baseUrl: `https://${host}:${port}`,
-    tokenId,
-    tokenSecret: requiredEnv(env, "PROXMOX_TOKEN_SECRET"),
-    defaultNode: requiredEnv(env, "PROXMOX_DEFAULT_NODE"),
-    verifyTls,
+    host: env.PROXMOX_HOST,
+    port: env.PROXMOX_PORT,
+    baseUrl: `https://${env.PROXMOX_HOST}:${env.PROXMOX_PORT}`,
+    tokenId: env.PROXMOX_TOKEN_ID,
+    tokenSecret: env.PROXMOX_TOKEN_SECRET,
+    defaultNode: env.PROXMOX_DEFAULT_NODE,
+    verifyTls: env.PROXMOX_VERIFY_TLS,
     sshHost: env.PROXMOX_SSH_HOST,
     sshUser: env.PROXMOX_SSH_USER,
     sshKeyPath: env.PROXMOX_SSH_KEY_PATH,
     sshPassword: env.PROXMOX_SSH_PASSWORD,
-    sshPort: numberEnv(env, "PROXMOX_SSH_PORT", 22),
+    sshPort: env.PROXMOX_SSH_PORT,
   };
 }
 
@@ -54,33 +43,4 @@ export function createProxmoxClient(config = getProxmoxConfig()) {
     tokenId: config.tokenId,
     tokenSecret: config.tokenSecret,
   });
-}
-
-function requiredEnv(env: NodeJS.ProcessEnv, name: string) {
-  const value = env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable ${name}`);
-  }
-  return value;
-}
-
-function numberEnv(env: NodeJS.ProcessEnv, name: string, fallback: number) {
-  const raw = env[name];
-  if (!raw) {
-    return fallback;
-  }
-
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`${name} must be a number`);
-  }
-  return parsed;
-}
-
-function booleanEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean) {
-  const raw = env[name];
-  if (!raw) {
-    return fallback;
-  }
-  return raw === "1" || raw.toLowerCase() === "true";
 }

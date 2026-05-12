@@ -1,17 +1,14 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { env } from "../../env";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 
 function getKey(): Buffer {
-  const hex = process.env.ENCRYPTION_KEY;
-  if (!hex) {
-    throw new Error("ENCRYPTION_KEY env var is required (64 hex chars for AES-256)");
-  }
-  const buf = Buffer.from(hex, "hex");
+  const buf = Buffer.from(env.SESSION_ENCRYPTION_KEY, "hex");
   if (buf.length !== 32) {
-    throw new Error("ENCRYPTION_KEY must be 32 bytes (64 hex characters)");
+    throw new Error("SESSION_ENCRYPTION_KEY must be 32 bytes (64 hex characters)");
   }
   return buf;
 }

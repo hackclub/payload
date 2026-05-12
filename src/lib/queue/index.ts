@@ -1,13 +1,14 @@
 import { Queue } from "bullmq";
 import { redis } from "../redis";
+import { env } from "../../env";
 
-export const SESSION_LIFETIME_MS = 6 * 60 * 60 * 1000;
-export const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-export const STUCK_TIMEOUT_MS = 10 * 60 * 1000;
-export const REAPER_INTERVAL_MS = 60 * 1000;
-export const HEARTBEAT_INTERVAL_MS = 30_000;
-export const MAX_SESSIONS_PER_USER = 2;
-export const IP_DISCOVERY_TIMEOUT_MS = 120_000;
+export const SESSION_LIFETIME_MS = env.SESSION_LIFETIME_MS;
+export const IDLE_TIMEOUT_MS = env.IDLE_TIMEOUT_MS;
+export const STUCK_TIMEOUT_MS = env.STUCK_TIMEOUT_MS;
+export const REAPER_INTERVAL_MS = env.REAPER_INTERVAL_MS;
+export const HEARTBEAT_INTERVAL_MS = env.HEARTBEAT_INTERVAL_MS;
+export const MAX_SESSIONS_PER_USER = env.MAX_SESSIONS_PER_USER;
+export const IP_DISCOVERY_TIMEOUT_MS = env.IP_DISCOVERY_TIMEOUT_MS;
 
 export const vmQueue = new Queue("vm", { connection: redis });
 

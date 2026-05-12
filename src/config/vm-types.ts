@@ -1,9 +1,11 @@
+import { env } from "../env";
+
 export const vmTypeSeeds = [
     {
         slug: "linux",
         displayName: "Debian XFCE",
         proxmoxTemplateVmid: 67001,
-        proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
+        proxmoxNode: env.PROXMOX_DEFAULT_NODE,
         protocol: "rdp",
         defaultPort: 3389,
         enabled: true,
@@ -17,7 +19,7 @@ export const vmTypeSeeds = [
         slug: "windows",
         displayName: "Windows 11",
         proxmoxTemplateVmid: 67002,
-        proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
+        proxmoxNode: env.PROXMOX_DEFAULT_NODE,
         protocol: "rdp",
         defaultPort: 3389,
         enabled: true,
@@ -31,7 +33,7 @@ export const vmTypeSeeds = [
         slug: "android",
         displayName: "Android",
         proxmoxTemplateVmid: 67003,
-        proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
+        proxmoxNode: env.PROXMOX_DEFAULT_NODE,
         protocol: "vnc",
         defaultPort: 5901,
         enabled: true,
@@ -45,7 +47,7 @@ export const vmTypeSeeds = [
         slug: "macos",
         displayName: "MacOS",
         proxmoxTemplateVmid: 67005,
-        proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
+        proxmoxNode: env.PROXMOX_DEFAULT_NODE,
         protocol: "vnc",
         defaultPort: 5900,
         enabled: true,

@@ -2,6 +2,7 @@ import NextAuth from "next-auth"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { db } from "./db"
 import * as schema from "./db/schema"
+import { env } from "./env"
 
 type CachetProfile = {
   displayName?: string;
@@ -25,10 +26,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       name: "Hack Club",
       type: "oidc",
       issuer: "https://auth.hackclub.com",
-      clientId: process.env.HACKCLUB_OIDC_CLIENT_ID,
-      clientSecret: process.env.HACKCLUB_OIDC_CLIENT_SECRET,
+      clientId: env.HACKCLUB_OIDC_CLIENT_ID,
+      clientSecret: env.HACKCLUB_OIDC_CLIENT_SECRET,
       authorization: {
-        params: { scope: "openid profile email slack_id" },
+        params: {
+          scope: "openid profile email slack_id",
+          ...(env.HACKCLUB_OIDC_REDIRECT_URI
+            ? { redirect_uri: env.HACKCLUB_OIDC_REDIRECT_URI }
+            : {}),
+        },
       },
       async profile(profile) {
         let name = profile.name;
