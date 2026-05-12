@@ -13,3 +13,14 @@ body {
   color: var(--foreground);
 }
 
+/* Hide any text selection that Firefox may create when a "stuck button"
+   state leaks across the Guacamole iframe boundary.  select-none on the
+   container is the primary prevention; this rule makes any selection
+   that still slips through invisible. */
+[data-session-viewer] ::selection {
+  background: transparent;
+}
+[data-session-viewer] ::-moz-selection {
+  background: transparent;
+}
+

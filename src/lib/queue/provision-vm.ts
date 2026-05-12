@@ -115,6 +115,13 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
     const vmUsername = vmType.username ?? undefined;
     const vmPassword = vmType.password ?? "";
 
+    // Clipboard policy: host -> VM paste is allowed, VM -> host copy is blocked.
+    // Guacamole's flags are written from the reviewer's perspective in the
+    // browser: "copy" = copy *out of* the remote, "paste" = paste *into* the
+    // remote. Setting disable-copy=true and disable-paste=false therefore
+    // gives a one-way host -> VM clipboard. Works natively on Linux (xrdp),
+    // Windows (RDP CLIPRDR), and Android (VNC ClientCutText). macOS is
+    // intentionally not on this path; see AI/integrations/guacamole.md.
     const parameters: Record<string, string> =
       vmType.protocol === "rdp"
         ? {
@@ -133,7 +140,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
             "enable-full-window-drag": "true",
             "enable-desktop-composition": "true",
             "enable-menu-animations": "true",
-            "disable-copy": "false",
+            "disable-copy": "true",
             "disable-paste": "false",
           }
         : {
@@ -142,7 +149,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
             ...(vmUsername ? { username: vmUsername } : {}),
             password: vmPassword,
             "color-depth": "24",
-            "disable-copy": "false",
+            "disable-copy": "true",
             "disable-paste": "false",
           };
 

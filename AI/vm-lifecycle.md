@@ -49,7 +49,10 @@ pending -> provisioning -> ready -> active
 5. Guacamole:
    - Create one-shot user `payload-{session_id}` with random password.
    - Create RDP/VNC connection with `hostname = vm_ip`, port, protocol, and
-     `disable-copy: false` (clipboard enabled). For RDP the connection also
+     `disable-copy: true` and `disable-paste: false` (host → VM paste
+     allowed, VM → host copy blocked; see
+     [integrations/guacamole.md](./integrations/guacamole.md) for rationale).
+     For RDP the connection also
      sets `security=any` (ADR-0026 — relaxed from ADR-0020's `tls` because
      not every Windows/xrdp build negotiates TLS cleanly), `ignore-cert=true`,
      and the per-OS credentials read from `vm_types.username` /

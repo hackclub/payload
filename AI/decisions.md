@@ -449,3 +449,46 @@ the scheduler id, so it safely runs on every app boot.
 - One less BullMQ deprecation to chase later.
 - Operators removing the schedule should use `removeJobScheduler` instead of
   `removeRepeatable`.
+
+---
+
+## ADR-0028 — Clipboard is host → VM only (paste-into-VM, no copy-out)
+
+**Date:** 2026-05-12 | **Status:** Accepted
+
+Reviewers need to paste text (URLs, snippets, credentials) from their machine
+into the VM, but should not be able to exfiltrate data from the VM through the
+clipboard. We considered: (a) full bidirectional clipboard, (b) no clipboard,
+(c) host → VM only via Guacamole's built-in flags, (d) a custom in-VM agent.
+
+**Decision:** Use option (c). Every Guacamole connection Payload creates sets
+`disable-copy: "true"` (block VM → host) and `disable-paste: "false"` (allow
+host → VM). Naming is from the reviewer's browser perspective: "copy" = copy
+*out of* the remote, "paste" = paste *into* the remote.
+
+This works natively on the v1 OSes:
+
+- **Linux (Debian + xrdp)** — `xrdp-chansrv` bridges the RDP CLIPRDR channel
+  to the X selection.
+- **Windows 11** — RDP clipboard redirection is on by default in the template.
+- **Android (BlissOS)** — the VNC server on the template handles the standard
+  RFB `ClientCutText` message.
+
+macOS is **excluded** because Apple's Screen Sharing speaks a non-standard
+VNC dialect that does not implement `ClientCutText`. macOS support is
+deferred to v2.x along with the macOS template; the chosen mechanism then
+will be either a third-party RFB-compliant server or a small in-VM clipboard
+agent (LaunchDaemon).
+
+**Consequences:**
+- One config change (`disable-copy` flipped from `false` to `true`) gives the
+  policy across all OSes; no per-OS code branches.
+- Reviewers paste into the VM with their normal browser shortcut; same-origin
+  iframe under `payload.hackclub.com/guac/*` makes the Clipboard API work
+  without extra prompts.
+- The smoke-test script (`scripts/payload.ts`) mirrors the same flags so
+  manual Guacamole verification matches production.
+- `enable-drive` and `enable-printing` remain off (Guacamole defaults), so
+  the clipboard is the only host → VM data channel.
+- macOS sessions, when added in v2.x, must explicitly state "clipboard not
+  supported" in the UI until the agent path lands.

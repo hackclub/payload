@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Clock, ArrowLeft, AlertTriangle, Terminal, Maximize2, Minimize2, Menu, X } from "lucide-react";
+import { Clock, ArrowLeft, AlertTriangle, Terminal, Maximize2, Minimize2, Menu, X, ClipboardPaste } from "lucide-react";
 import Link from "next/link";
 
 type SessionClientProps = {
@@ -38,6 +38,7 @@ export default function SessionClient({
   const [isUiVisible, setIsUiVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showDestroyConfirm, setShowDestroyConfirm] = useState(false);
+  const [pasteFlash, setPasteFlash] = useState<"idle" | "ok" | "fail">("idle");
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const showDestroyConfirmRef = useRef(showDestroyConfirm);
@@ -67,6 +68,56 @@ export default function SessionClient({
       // cross-origin (shouldn't happen for same-origin /guac, but be safe)
     }
   }, []);
+
+  // Send the host clipboard into the VM as a single paste action.
+  //
+  // Why this exists: Guacamole 1.6 calls navigator.clipboard.readText() on
+  // its own paste/focus handlers. Firefox 125+ requires per-call user
+  // permission for clipboard reads (Chrome lets you grant it once via the
+  // Permissions API), so in Firefox a Ctrl+V — and any iframe focus event —
+  // pops the "Paste" authorization context menu. By driving the read from a
+  // direct button click here we get one user gesture, one prompt-free read,
+  // and one synthesized paste event delivered to the iframe.
+  const sendClipboardToVm = useCallback(async () => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        setPasteFlash("fail");
+        setTimeout(() => setPasteFlash("idle"), 1200);
+        return;
+      }
+      // Same-origin /guac/* iframe — we can reach into it. Dispatch a real
+      // ClipboardEvent so Guacamole's existing paste listener picks it up
+      // and forwards via the tunnel's "clipboard" instruction.
+      const win = iframe.contentWindow;
+      const doc = iframe.contentDocument;
+      if (!win || !doc) {
+        setPasteFlash("fail");
+        setTimeout(() => setPasteFlash("idle"), 1200);
+        return;
+      }
+      const dt = new (win as unknown as { DataTransfer: typeof DataTransfer }).DataTransfer();
+      dt.setData("text/plain", text);
+      const evt = new (win as unknown as { ClipboardEvent: typeof ClipboardEvent }).ClipboardEvent("paste", {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+      });
+      const target = (doc.activeElement as HTMLElement | null) ?? doc.body;
+      target.dispatchEvent(evt);
+      // Refocus the iframe so the user can immediately keep typing/clicking.
+      focusIframe();
+      setPasteFlash("ok");
+      setTimeout(() => setPasteFlash("idle"), 900);
+    } catch {
+      // Either the user denied the Firefox prompt or the browser blocked the
+      // read for some other reason. Surface visually; don't throw.
+      setPasteFlash("fail");
+      setTimeout(() => setPasteFlash("idle"), 1200);
+    }
+  }, [focusIframe]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -164,6 +215,65 @@ export default function SessionClient({
     };
   }, [iframeUrl, focusIframe]);
 
+  // Forward parent-document mouseup/blur into the iframe so Guacamole always
+  // sees the matching button release.
+  //
+  // The bug this fixes: press a mouse button while the cursor is inside the
+  // iframe, drag out of the iframe (e.g. up to the floating island), and
+  // release. Guacamole captured the mousedown but never sees a mouseup —
+  // mouseup events inside the parent document do *not* cross into the
+  // iframe's contentDocument, so Guacamole leaves the button held in the VM.
+  // The visible symptoms are: the parent document starts a text selection
+  // from wherever the cursor first re-entered (e.g. the island label
+  // "selecting all the text"), and the VM behaves as if a button is stuck
+  // down (often perceived as "right click is being held").
+  //
+  // Synthesizing a mouseup inside the iframe's document is enough — same
+  // origin /guac/* lets us reach in, and Guacamole's mouseup listener is
+  // installed at the document/window level so a bubbling event reaches it.
+  // We also do this on window blur because alt-tabbing mid-drag has the
+  // same shape.
+  useEffect(() => {
+    if (!iframeUrl) return;
+    const releaseInIframe = (button: number) => {
+      const doc = iframeRef.current?.contentDocument;
+      const win = iframeRef.current?.contentWindow;
+      if (!doc || !win) return;
+      const evt = new (win as unknown as { MouseEvent: typeof MouseEvent }).MouseEvent("mouseup", {
+        bubbles: true,
+        cancelable: true,
+        button,
+        buttons: 0,
+        view: win as unknown as Window,
+      });
+      (doc.activeElement as HTMLElement | null)?.dispatchEvent(evt);
+      doc.dispatchEvent(evt);
+    };
+    const onWindowMouseUp = (e: MouseEvent) => {
+      releaseInIframe(e.button);
+      // Firefox can leak a "stuck button" state across the iframe
+      // boundary: a mousedown inside the iframe followed by a mouseup
+      // outside it may leave the parent document with an active text
+      // selection that select-none alone doesn't prevent.  Clear it on
+      // every mouseup so the UI never shows a ghost selection.
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+    };
+    const onWindowBlur = () => {
+      // Release every button on blur — we don't know which (if any) Guacamole
+      // is still holding, and a no-op release is harmless.
+      releaseInIframe(0);
+      releaseInIframe(1);
+      releaseInIframe(2);
+    };
+    window.addEventListener("mouseup", onWindowMouseUp);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("mouseup", onWindowMouseUp);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, [iframeUrl]);
+
   useEffect(() => {
     if (!showDestroyConfirm) focusIframe();
   }, [showDestroyConfirm, focusIframe]);
@@ -230,23 +340,45 @@ export default function SessionClient({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black animate-in fade-in duration-300">
-      {/* Top-left toggle button */}
+    <div
+      data-session-viewer
+      className="fixed inset-0 z-50 flex bg-black select-none animate-in fade-in duration-300"
+      onContextMenu={(e) => e.preventDefault()}
+      onMouseDown={(e) => { if (e.button !== 0) e.preventDefault(); }}
+      onDragStart={(e) => e.preventDefault()}
+    >
+      {/* Top-left toggle button.
+          stopPropagation + preventDefault on mousedown keep the click from
+          bubbling into any iframe focus dance, which in Firefox 125+ would
+          trigger Guacamole's clipboard-read sync and pop the native
+          "Paste" authorization context menu. */}
       <button
-        onClick={() => setIsUiVisible(!isUiVisible)}
+        onMouseDown={(e) => { e.stopPropagation(); if (e.button !== 0) e.preventDefault(); }}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsUiVisible(!isUiVisible);
+        }}
         className={`absolute top-3 left-3 z-60  hover:bg-black/60 p-1.5 rounded-md  hover:text-white/90 transition-all duration-300 backdrop-blur-sm ${isUiVisible ? 'opacity-100 bg-black/60 text-white/90' : 'opacity-30 hover:opacity-100 bg-black/20 text-white/30'}`}
         title={isUiVisible ? "Hide UI" : "Show UI"}
       >
         {isUiVisible ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
       </button>
 
-      {/* Floating Island UI */}
-      <div 
-        className={`absolute left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-in-out flex flex-col items-center top-4 ${isUiVisible ? 'translate-y-0 opacity-100 visible' : '-translate-y-24 opacity-0 invisible'}`}
-        // After interacting with floating UI buttons (which take focus away
-        // from the iframe), refocus the iframe so keystrokes resume going
-        // to the VM. setTimeout lets the click's own handler run first.
-        onClick={() => setTimeout(focusIframe, 0)}
+      {/* Floating Island UI.
+          We deliberately do NOT auto-refocus the iframe on every click here.
+          Refocusing the iframe causes Guacamole 1.6 to issue a clipboard
+          read against the host clipboard, which in Firefox triggers the
+          per-call "Paste" authorization context menu. Each button below
+          handles its own focus restore where needed. */}
+      <div
+        // select-none: defensive — if Guacamole ever does leave a button held
+        // (e.g. browser dropped a mouseup before our window-level forwarder
+        // could fire), the parent doc would otherwise start a text selection
+        // from this overlay the moment the cursor enters it. Killing
+        // user-select on the island keeps the visible UX clean even in that
+        // race.
+        className={`absolute left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-in-out flex flex-col items-center top-4 select-none ${isUiVisible ? 'translate-y-0 opacity-100 visible' : '-translate-y-24 opacity-0 invisible'}`}
       >
         <div className={`flex items-center gap-4 bg-hc-dark/80 backdrop-blur-md border border-hc-darkless/50 shadow-2xl rounded-full px-4 py-2`}>
           <Link href="/" className="text-hc-muted hover:text-hc-smoke rounded-full transition-colors p-1" title="Back to Dashboard">
@@ -267,6 +399,26 @@ export default function SessionClient({
           </div>
 
           <div className="w-px h-5 bg-hc-darkless/50 ml-2"></div>
+
+          <button
+            onClick={sendClipboardToVm}
+            className={`transition-colors p-1 ${
+              pasteFlash === "ok"
+                ? "text-hc-green"
+                : pasteFlash === "fail"
+                  ? "text-hc-red"
+                  : "text-hc-muted hover:text-hc-smoke"
+            }`}
+            title={
+              pasteFlash === "ok"
+                ? "Pasted into VM"
+                : pasteFlash === "fail"
+                  ? "Paste failed (clipboard empty or denied)"
+                  : "Paste clipboard into VM"
+            }
+          >
+            <ClipboardPaste className="w-4 h-4" />
+          </button>
 
           <button
             onClick={() => {

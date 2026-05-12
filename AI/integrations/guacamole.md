@@ -92,7 +92,7 @@ Content-Type: application/json
     "port": "5900",
     "password": "<vm credential>",
     "color-depth": "24",
-    "disable-copy": "false",
+    "disable-copy": "true",
     "disable-paste": "false"
   },
   "attributes": {
@@ -118,7 +118,7 @@ Same shape, but `protocol` is `rdp` and parameters include:
   "security": "tls",
   "disable-auth": "false",
   "resize-method": "display-update",
-  "disable-copy": "false",
+  "disable-copy": "true",
   "disable-paste": "false"
 }
 ```
@@ -193,10 +193,44 @@ To make the future swap easier:
 - Do not mention Guacamole internals in user-facing copy.
 - Keep iframe-specific logic isolated to the session view.
 
+## Clipboard policy
+
+Payload allows **host → VM paste only**. Reviewers can paste text from their
+local clipboard into the VM, but cannot copy data out of the VM.
+
+Guacamole's parameters are written from the reviewer's perspective in the
+browser:
+
+- `disable-copy` controls copying *out of* the remote (VM → host).
+- `disable-paste` controls pasting *into* the remote (host → VM).
+
+So every connection Payload creates uses:
+
+```json
+{
+  "disable-copy": "true",
+  "disable-paste": "false"
+}
+```
+
+This works for the v1 OSes without any host-side agent:
+
+| OS | Protocol | Why it works |
+|----|----------|--------------|
+| Debian XFCE | RDP via xrdp | `xrdp-chansrv` bridges the RDP CLIPRDR channel to the X selection. |
+| Windows 11 | RDP | Clipboard redirection is on by default in the RDP client/server. |
+| BlissOS / Android | VNC | The VNC server honors the standard RFB `ClientCutText` message. |
+
+macOS is intentionally **not** supported on this clipboard path. Apple's
+Screen Sharing speaks a non-standard VNC dialect that does not implement
+`ClientCutText`, so a future macOS template needs either a third-party
+RFB-compliant server or a small in-VM clipboard agent. macOS is deferred to
+v2.x; until then, document "clipboard not supported on macOS sessions".
+
 ## Known gotchas
 
-- Clipboard on RDP requires `disable-copy = false` and Windows clipboard
-  redirection enabled.
+- Clipboard on RDP requires `disable-paste = false` and Windows clipboard
+  redirection enabled in the guest.
 - Tokens in iframe URLs can appear in browser history. Keep TTL short and do not
   log URLs with query strings.
 - Audio is off by default and not worth v1 complexity.

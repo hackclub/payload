@@ -167,7 +167,7 @@ async function testGuacamoleConnection() {
             "enable-full-window-drag": "true",
             "enable-desktop-composition": "true",
             "enable-menu-animations": "true",
-            "disable-copy": "false",
+            "disable-copy": "true",
             "disable-paste": "false",
           }
         : {
@@ -175,7 +175,7 @@ async function testGuacamoleConnection() {
             port,
             password: vmPassword,
             "color-depth": "24",
-            "disable-copy": "false",
+            "disable-copy": "true",
             "disable-paste": "false",
           };
 
