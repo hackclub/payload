@@ -91,11 +91,18 @@ template.
 | description | text | shown in picker UI |
 | username | text | template VM default username |
 | password | text | template VM default password |
+| icon_url | text | optional URL of an icon for the picker tile |
 | created_at / updated_at | timestamptz | |
 
 The `username` and `password` columns hold the fixed template credential. These
 are the credentials used for Guacamole connections in v1 (per-session credential
-injection is deferred).
+injection is deferred). `provision-vm` reads them at job time, so adding a new
+VM type only needs a new `vm_types` row + a Proxmox template (ADR-0026).
+
+`icon_url` is the only metadata column the picker UI cares about beyond the
+seed config in `src/config/vm-types.ts`. The seed file is still the canonical
+source of icon URLs; the column lets the dashboard render correctly even when
+all it has is a `vm_types` row.
 
 ### vm_sessions
 
@@ -229,6 +236,7 @@ export const vmTypes = pgTable("vm_types", {
   description: text("description"),
   username: text("username"),
   password: text("password"),
+  iconUrl: text("icon_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

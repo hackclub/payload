@@ -104,15 +104,15 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
       password: guacamolePassword,
     });
 
-    const vmUsername = vmType.protocol === "rdp" ? "shipwrights" : undefined;
-    const vmPassword = "shipwrights";
+    const vmUsername = vmType.username ?? undefined;
+    const vmPassword = vmType.password ?? "";
 
     const parameters: Record<string, string> =
       vmType.protocol === "rdp"
         ? {
             hostname: vmIp,
             port: String(vmType.defaultPort),
-            username: vmUsername!,
+            ...(vmUsername ? { username: vmUsername } : {}),
             password: vmPassword,
             "ignore-cert": "true",
             security: "any",

@@ -129,7 +129,8 @@ user-facing copy.
 
 ## ADR-0010 — v1 ships Linux only
 
-**Date:** 2026-05-09 | **Status:** Superseded by ADR-0020
+**Date:** 2026-05-09 | **Status:** Superseded by ADR-0020 (template detail) and
+ADR-0024 (OS scope)
 
 Initially v1 scoped four VM types: Windows, Linux, Android, and macOS.
 
@@ -274,7 +275,8 @@ Do not wire Kamal for now. Coolify is likely later.
 
 ## ADR-0020 — Linux v1 template is Debian 12 + XFCE + xrdp
 
-**Date:** 2026-05-10 | **Status:** Accepted
+**Date:** 2026-05-10 | **Status:** Accepted (OS-scope portion superseded by
+ADR-0024; the template details below still describe the `linux` row)
 
 The original Linux-only v1 decision picked Ubuntu 24.04 + XFCE over VNC. During
 Milestone 2/3 validation, the working path became Debian 12 + XFCE over xrdp,
@@ -351,3 +353,99 @@ is the runtime source of truth; the seed script just bootstraps it.
   `pnpm payload allowlist:sync` (or manual seed).
 - `src/config/reviewers.ts` can be created later as part of the v1.x admin UI
   work.
+
+---
+
+## ADR-0024 — v1 ships Linux + Windows + Android (supersedes ADR-0010 / ADR-0020)
+
+**Date:** 2026-05-11 | **Status:** Accepted
+
+ADR-0010 narrowed v1 to Linux only. ADR-0020 locked in the Debian 12 + XFCE +
+xrdp template as the v1 Linux template. During v1 polish, working Proxmox
+templates also became available for Windows and Android (BlissOS), so v1 is now
+shipping all three together.
+
+**Decision:** v1 ships three VM types from day one:
+
+- `linux`: Debian 12 + XFCE + xrdp on RDP/3389 (template VMID 67001)
+- `windows`: Windows 11 Enterprise IoT LTSC on RDP/3389 (template VMID 67002)
+- `android`: BlissOS on VNC/5901 (template VMID 67003)
+
+macOS remains deferred to v2.x (ADR-0007 risk still applies).
+
+**Consequences:**
+- The picker on the dashboard renders three tiles, not one.
+- Per-OS template-build runbooks are still needed for Windows and Android (only
+  the Debian one exists today).
+- Android IP discovery currently rides the same Proxmox neighbor-table path as
+  Linux/Windows. If that breaks for a future Android image, the fallbacks
+  listed in the roadmap (ARP scan, DHCP lease lookup, in-VM agent) still apply.
+- ADR-0010 and ADR-0020 are superseded for the OS-scope question. The Debian
+  template details from ADR-0020 still describe the Linux row specifically.
+
+---
+
+## ADR-0025 — Advisory lock for per-user cap runs inside a transaction
+
+**Date:** 2026-05-11 | **Status:** Accepted
+
+ADR-0006 (per-user cap of 2) was implemented in `createUserSession` using
+`pg_advisory_xact_lock(...)` issued through `db.execute(...)` outside of any
+transaction. `pg_advisory_xact_lock` is a no-op outside a transaction (the
+lock is acquired and released as part of the same statement), so two concurrent
+"Launch" clicks could both pass the cap check.
+
+**Decision:** Run the cap check, the `vm_sessions` insert, and the
+`vm_session_events` insert inside a single `db.transaction(...)` and acquire
+`pg_advisory_xact_lock` at the top of that transaction. The BullMQ enqueue
+happens *after* the transaction commits so a Redis hiccup cannot roll back the
+session row.
+
+**Consequences:**
+- The race window for double-launching past the per-user cap is closed.
+- If `enqueueProvisionVm` ever fails, the row exists in `pending` state and
+  will be picked up by the stuck-provisioning reaper after 10 minutes.
+
+---
+
+## ADR-0026 — Provisioning reads VM credentials from `vm_types`
+
+**Date:** 2026-05-11 | **Status:** Accepted
+
+The original `provision-vm` job hard-coded `username = "shipwrights"` for RDP
+and a literal password string, ignoring the `username` / `password` columns
+already on the `vm_types` table. This made adding Windows or Android (which
+need different defaults) require a code change.
+
+**Decision:** `provision-vm` reads the per-OS credentials from the `vm_types`
+row. RDP connections include `username` only when `vm_types.username` is set;
+VNC connections only pass the `password`. The Guacamole RDP `security` mode
+stays at `any` (operator preference; ADR-0020's `tls` recommendation is
+relaxed for the live deployment because not every Windows/xrdp combination
+negotiates TLS cleanly).
+
+**Consequences:**
+- Adding a VM type is now seed data + a Proxmox template, not a code patch.
+- Per-session credential injection (v1.x roadmap item) replaces both the
+  `vm_types.password` column and the encrypted `vm_credential_ciphertext` on
+  the session row.
+
+---
+
+## ADR-0027 — Reaper uses BullMQ Job Scheduler, not repeatable jobs
+
+**Date:** 2026-05-11 | **Status:** Accepted
+
+`scheduleReaper` originally used `vmQueue.add("reap-vm-sessions", {}, { repeat:
+{ every } })`. BullMQ now recommends Job Schedulers over the older
+repeatable-job API (the older API is deprecated and slated for removal in v6).
+
+**Decision:** `scheduleReaper` calls
+`vmQueue.upsertJobScheduler("reap-vm-sessions", { every: REAPER_INTERVAL_MS },
+{ name: "reap-vm-sessions", data: {} })`. `upsertJobScheduler` is idempotent on
+the scheduler id, so it safely runs on every app boot.
+
+**Consequences:**
+- One less BullMQ deprecation to chase later.
+- Operators removing the schedule should use `removeJobScheduler` instead of
+  `removeRepeatable`.

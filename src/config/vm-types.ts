@@ -8,8 +8,8 @@ export const vmTypeSeeds = [
         defaultPort: 3389,
         enabled: true,
         description: "Debian running XFCE",
-        username: process.env.VM_DEFAULT_USERNAME ?? "shipwrights",
-        password: process.env.VM_DEFAULT_PASSWORD ?? "shipwrights",
+        username: "shipwrights",
+        password: "shipwrights",
         iconUrl:
             "https://cdn.hackclub.com/019e129d-bd95-7d3f-b952-eaffec41afc3/devicon--debian.png",
     },
@@ -22,8 +22,8 @@ export const vmTypeSeeds = [
         defaultPort: 3389,
         enabled: true,
         description: "Windows 11 Enterprise Iot LTSC",
-        username: process.env.VM_DEFAULT_USERNAME ?? "shipwrights",
-        password: process.env.VM_DEFAULT_PASSWORD ?? "shipwrights",
+        username: "shipwrights",
+        password: "shipwrights",
         iconUrl:
             "https://cdn.hackclub.com/019e129d-c001-7ffc-8288-0fd14cf9dae3/devicon--windows11.png",
     },
@@ -36,7 +36,7 @@ export const vmTypeSeeds = [
         defaultPort: 5901,
         enabled: true,
         description: "Bliss OS on Android 13",
-        username: process.env.VM_DEFAULT_USERNAME ?? "shipwrights",
+        username: "shipwrights",
         password: "",
         iconUrl:
             "https://cdn.hackclub.com/019e129d-bb06-7cbd-bc0f-b5ae86029a35/devicon--android.png",

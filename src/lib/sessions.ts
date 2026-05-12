@@ -14,36 +14,44 @@ export async function createUserSession(userId: string, vmTypeSlug: string) {
   }
 
   const lockKey = advisoryLockKey(userId);
-  await db.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
 
-  const activeCount = await db.query.vmSessions.findMany({
-    where: and(
-      eq(vmSessions.userId, userId),
-      inArray(vmSessions.state, ["pending", "provisioning", "ready", "active"]),
-    ),
+  const inserted = await db.transaction(async (tx) => {
+    // pg_advisory_xact_lock requires being inside a transaction; the lock
+    // is auto-released when the transaction commits/rolls back.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+
+    const activeCount = await tx.query.vmSessions.findMany({
+      where: and(
+        eq(vmSessions.userId, userId),
+        inArray(vmSessions.state, ["pending", "provisioning", "ready", "active"]),
+      ),
+    });
+
+    if (activeCount.length >= MAX_SESSIONS_PER_USER) {
+      throw new Error(`You already have ${MAX_SESSIONS_PER_USER} active sessions`);
+    }
+
+    const expiresAt = new Date(Date.now() + SESSION_LIFETIME_MS);
+
+    const [row] = await tx
+      .insert(vmSessions)
+      .values({
+        userId,
+        vmTypeId: vmType.id,
+        expiresAt,
+      })
+      .returning();
+
+    await tx.insert(vmSessionEvents).values({
+      vmSessionId: row.id,
+      kind: "created",
+      payload: { vmTypeSlug },
+    });
+
+    return row;
   });
 
-  if (activeCount.length >= MAX_SESSIONS_PER_USER) {
-    throw new Error(`You already have ${MAX_SESSIONS_PER_USER} active sessions`);
-  }
-
-  const expiresAt = new Date(Date.now() + SESSION_LIFETIME_MS);
-
-  const [inserted] = await db
-    .insert(vmSessions)
-    .values({
-      userId,
-      vmTypeId: vmType.id,
-      expiresAt,
-    })
-    .returning();
-
-  await db.insert(vmSessionEvents).values({
-    vmSessionId: inserted.id,
-    kind: "created",
-    payload: { vmTypeSlug },
-  });
-
+  // Enqueue outside the transaction so a Redis hiccup cannot roll back the row.
   await enqueueProvisionVm({ sessionId: inserted.id });
 
   return inserted;

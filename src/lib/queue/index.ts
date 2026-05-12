@@ -35,15 +35,11 @@ export async function enqueueTerminateVm(data: TerminateVmJobData) {
 }
 
 export async function scheduleReaper() {
-  const repeatableJobs = await vmQueue.getRepeatableJobs();
-  const existing = repeatableJobs.find((j) => j.key === "reap-vm-sessions");
-  if (!existing) {
-    await vmQueue.add(
-      "reap-vm-sessions",
-      {},
-      {
-        repeat: { every: REAPER_INTERVAL_MS },
-      },
-    );
-  }
+  // Use BullMQ's Job Scheduler (replaces the deprecated repeatable-job API).
+  // upsert is idempotent: same scheduler id replaces any prior schedule.
+  await vmQueue.upsertJobScheduler(
+    "reap-vm-sessions",
+    { every: REAPER_INTERVAL_MS },
+    { name: "reap-vm-sessions", data: {} },
+  );
 }

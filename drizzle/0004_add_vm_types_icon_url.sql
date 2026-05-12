@@ -1,0 +1,1 @@
+ALTER TABLE "vm_types" ADD COLUMN "icon_url" text;

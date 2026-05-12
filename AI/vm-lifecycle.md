@@ -18,10 +18,13 @@ pending -> provisioning -> ready -> active
 
 - Trigger: `POST /api/sessions` or a server action with `vm_type_slug`.
 - Guards: user in allowlist, user has fewer than 2 active VMs, VM type enabled.
-- Use a Postgres transaction and advisory lock keyed by user id to prevent
-  double-click races.
+- The cap check, `vm_sessions` insert, and `vm_session_events` insert run
+  inside a single Postgres transaction with `pg_advisory_xact_lock` keyed by a
+  hash of the user id (ADR-0025) so concurrent "Launch" clicks cannot both
+  pass the cap.
 - DB: insert `vm_sessions` with `state = pending` and `expires_at = now + 6h`.
-- Queue: add BullMQ job `provision-vm` with `{ sessionId }`.
+- Queue: add BullMQ job `provision-vm` with `{ sessionId }` *after* the
+  transaction commits so a Redis hiccup cannot roll back the row.
 - Response: 201 with session id; UI shows provisioning screen and opens SSE
   stream for updates.
 
@@ -31,8 +34,11 @@ pending -> provisioning -> ready -> active
 2. Generate per-VM credential with `crypto.randomBytes(32)` and encrypt it with
    AES-256-GCM before writing to Postgres.
 3. Proxmox:
-   - `GET /cluster/nextid`.
-   - `POST /nodes/{node}/qemu/{template_vmid}/clone` with fresh `newid`.
+   - Allocate a fresh VMID. The current implementation generates a random
+     `69XXX` candidate and uniqueness-checks it against `vm_sessions`
+     (`allocateVmid` in `provision-vm.ts`). `GET /cluster/nextid` is the
+     official path and is preferred for any rewrite.
+   - `POST /nodes/{node}/qemu/{template_vmid}/clone` with the chosen `newid`.
    - Poll task status until clone completes.
    - `POST /nodes/{node}/qemu/{vmid}/status/start`.
 4. Wait for IP via Proxmox host neighbor table:
@@ -42,8 +48,12 @@ pending -> provisioning -> ready -> active
    - qemu-guest-agent is not used in v1 (template has `agent enabled=0`).
 5. Guacamole:
    - Create one-shot user `payload-{session_id}` with random password.
-   - Create RDP/VNC connection with `hostname = vm_ip`, port, protocol, `disable-copy: false`
-     (clipboard enabled), and `security=tls` for RDP.
+   - Create RDP/VNC connection with `hostname = vm_ip`, port, protocol, and
+     `disable-copy: false` (clipboard enabled). For RDP the connection also
+     sets `security=any` (ADR-0026 — relaxed from ADR-0020's `tls` because
+     not every Windows/xrdp build negotiates TLS cleanly), `ignore-cert=true`,
+     and the per-OS credentials read from `vm_types.username` /
+     `vm_types.password`.
    - Grant that user permission to use the connection.
 6. Transition `provisioning -> ready`, persist `proxmox_vmid`, `vm_ip`,
    `guacamole_connection_id`, and encrypted Guacamole password.
@@ -84,7 +94,8 @@ On error: log to `vm_session_events`, mark `errored`, and enqueue
 
 ### 6. Reap (BullMQ scheduled job: `reap-vm-sessions`)
 
-Run every 60 seconds. BullMQ should use Job Schedulers for recurring work.
+Run every 60 seconds via `vmQueue.upsertJobScheduler("reap-vm-sessions", ...)`
+(ADR-0027). The older `repeat: { every }` API is deprecated in BullMQ.
 
 ```sql
 -- TTL reaper

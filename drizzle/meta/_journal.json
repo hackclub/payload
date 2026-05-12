@@ -29,6 +29,13 @@
       "when": 1778419618581,
       "tag": "0003_dusty_blacklash",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778479509091,
+      "tag": "0004_add_vm_types_icon_url",
+      "breakpoints": true
     }
   ]
 }

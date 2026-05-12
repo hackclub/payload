@@ -104,6 +104,7 @@ async function seedVmTypes() {
           description: vmType.description,
           username: vmType.username,
           password: vmType.password,
+          iconUrl: vmType.iconUrl,
         },
       });
   }
