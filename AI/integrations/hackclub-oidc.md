@@ -45,6 +45,7 @@ Use Auth.js v5 with a custom OIDC provider. Keep this in `src/auth.ts`.
 ```ts
 import NextAuth from "next-auth";
 import type { OIDCConfig } from "next-auth/providers";
+import { env } from "./env";
 
 type HackClubProfile = {
   sub: string;
@@ -59,9 +60,9 @@ const HackClubProvider: OIDCConfig<HackClubProfile> = {
   type: "oidc",
   issuer: "https://auth.hackclub.com",
   wellKnown: "https://auth.hackclub.com/.well-known/openid-configuration",
-  authorization: { params: { scope: "openid profile email slack_id" } },
-  clientId: process.env.HACKCLUB_OIDC_CLIENT_ID,
-  clientSecret: process.env.HACKCLUB_OIDC_CLIENT_SECRET,
+  authorization: { params: { scope: "openid slack_id" } },
+  clientId: env.HACKCLUB_OIDC_CLIENT_ID,
+  clientSecret: env.HACKCLUB_OIDC_CLIENT_SECRET,
   profile(profile) {
     if (!profile.slack_id) {
       throw new Error("Hack Club Auth did not return slack_id");

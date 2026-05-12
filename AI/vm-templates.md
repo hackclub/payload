@@ -102,47 +102,49 @@ Keep seed data in `src/config/vm-types.ts`, then load via
 `pnpm payload db:seed`. The actual current seed file ships all three v1 OSes:
 
 ```ts
+import { env } from "../env";
+
 export const vmTypeSeeds = [
   {
     slug: "linux",
     displayName: "Debian XFCE",
     proxmoxTemplateVmid: 67001,
-    proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
+    proxmoxNode: env.PROXMOX_DEFAULT_NODE,
     protocol: "rdp",
     defaultPort: 3389,
     enabled: true,
     description: "Debian running XFCE",
-    username: process.env.VM_DEFAULT_USERNAME ?? "shipwrights",
-    password: process.env.VM_DEFAULT_PASSWORD ?? "shipwrights",
+    username: "shipwrights",
+    password: "shipwrights",
     iconUrl: "https://cdn.hackclub.com/.../debian.png",
   },
   {
     slug: "windows",
     displayName: "Windows 11",
     proxmoxTemplateVmid: 67002,
-    proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
+    proxmoxNode: env.PROXMOX_DEFAULT_NODE,
     protocol: "rdp",
     defaultPort: 3389,
     enabled: true,
     description: "Windows 11 Enterprise IoT LTSC",
-    username: process.env.VM_DEFAULT_USERNAME ?? "shipwrights",
-    password: process.env.VM_DEFAULT_PASSWORD ?? "shipwrights",
+    username: "shipwrights",
+    password: "shipwrights",
     iconUrl: "https://cdn.hackclub.com/.../windows11.png",
   },
   {
     slug: "android",
     displayName: "Android",
     proxmoxTemplateVmid: 67003,
-    proxmoxNode: process.env.PROXMOX_DEFAULT_NODE ?? "pve",
+    proxmoxNode: env.PROXMOX_DEFAULT_NODE,
     protocol: "vnc",
     defaultPort: 5901,
     enabled: true,
     description: "Bliss OS on Android 13",
-    username: process.env.VM_DEFAULT_USERNAME ?? "shipwrights",
+    username: "shipwrights",
     password: "",
     iconUrl: "https://cdn.hackclub.com/.../android.png",
   },
-];
+] as const;
 ```
 
 The `iconUrl` value is also persisted in the `vm_types.icon_url` column so the

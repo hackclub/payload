@@ -10,8 +10,8 @@ Goal: remove the Rails implementation and establish a clean Next.js foundation.
 - [ ] Dockerfile using Next.js standalone output
 - [x] `docker-compose.yml` for Postgres and Redis in local/dev deploys (app
       runs on host; Dockerfile is the missing piece)
-- [ ] `env.ts` with Zod validation (Zod is installed; env access is currently
-      ad-hoc per module via `getProxmoxConfig` / `getGuacamoleConfig` helpers)
+- [x] `env.ts` with Zod validation (validated env schema in `src/env.ts`, all
+      modules now import from it instead of `process.env` directly)
 
 ## v1 — Ship to reviewers (multi-OS)
 
