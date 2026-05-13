@@ -14,7 +14,7 @@ export const vmTypeSeeds = [
         password: "shipwrights",
         iconUrl:
             "https://cdn.hackclub.com/019e129d-bd95-7d3f-b952-eaffec41afc3/devicon--debian.png",
-        bootDelayMs: 0,
+        bootDelayMs: 1000,
         expensive: false,
     },
     {
@@ -30,7 +30,7 @@ export const vmTypeSeeds = [
         password: "shipwrights",
         iconUrl:
             "https://cdn.hackclub.com/019e129d-c001-7ffc-8288-0fd14cf9dae3/devicon--windows11.png",
-        bootDelayMs: 0,
+        bootDelayMs: 1000,
         expensive: false,
     },
     {
@@ -64,7 +64,7 @@ export const vmTypeSeeds = [
         password: "shipwrights",
         iconUrl:
             "https://cdn.hackclub.com/019e129d-b89d-708b-a515-d8979405d1a8/ic--baseline-apple.png",
-        bootDelayMs: 0,
+        bootDelayMs: 1000,
         expensive: true,
     },
 ] as const;
