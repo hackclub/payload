@@ -7,6 +7,7 @@ import { createUserSession } from "@/lib/sessions";
 import { redirect } from "next/navigation";
 import { vmTypeSeeds } from "@/config/vm-types";
 import DashboardLive from "./DashboardLive";
+import { env } from "@/env";
 
 type UserWithSlackId = {
   slackId?: string | null;
@@ -35,20 +36,45 @@ export default async function Dashboard() {
 
   if (!session?.user) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-4">
-        <div className="bg-hc-dark border border-hc-darkless rounded-hc p-10 max-w-md w-full shadow-lg text-center">
-          <h1 className="text-4xl font-black mb-4 text-hc-red uppercase tracking-tight">Payload</h1>
-          <p className="text-hc-muted mb-8 text-lg">Sandboxed desktop environments for reviewing Hack Club projects.</p>
-          <form
-            action={async () => {
-              "use server";
-              await signIn("hackclub", { redirectTo: "/" });
-            }}
-          >
-            <button type="submit" className="bg-hc-red hover:bg-[#d82a41] text-white font-bold py-3 px-6 rounded-hc w-full text-lg transition-colors shadow-sm">
-              Sign in with Hack Club
-            </button>
-          </form>
+      <div className="fixed inset-0 z-50 bg-hc-darker flex flex-col items-center justify-center px-4 py-8 animate-in fade-in duration-500 overflow-hidden">
+        {/* Technical Blueprint/Radar Grid Background */}
+        <div 
+          className="absolute inset-0 pointer-events-none z-0" 
+          style={{
+            backgroundImage: "linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+            backgroundPosition: "center center",
+            maskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 10%, transparent 100%)",
+            WebkitMaskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 10%, transparent 100%)"
+          }}
+        />
+
+        <div className="max-w-2xl w-full text-center space-y-6 relative z-10">
+          <h1 className="text-5xl md:text-7xl font-black text-hc-snow uppercase tracking-tight drop-shadow-sm">
+            Payload
+          </h1>
+          <p className="text-lg md:text-xl text-hc-smoke max-w-xl mx-auto leading-relaxed">
+            VMs for Hack Club project reviewers. Login with your Hack Club account to get started.
+          </p>
+          <div className="flex flex-col items-center gap-4 pt-6">
+            <form
+              className="w-full max-w-sm"
+              action={async () => {
+                "use server";
+                await signIn("hackclub", { redirectTo: "/" });
+              }}
+            >
+              <button type="submit" className="bg-hc-red hover:bg-[#d82a41] text-white font-bold py-3.5 px-8 rounded-hc w-full text-lg transition-all shadow hover:shadow-hc-red/20 hover:-translate-y-0.5">
+                Sign in with Hack Club
+              </button>
+            </form>
+            <p className="text-hc-muted text-sm mt-4">
+              Need access? <a href={env.SLACK_REQUEST_URL} target="_blank" rel="noopener noreferrer" className="text-hc-cyan hover:underline decoration-hc-cyan/50 underline-offset-4 transition-all">Request it on Slack</a>
+            </p>
+          </div>
+        </div>
+        <div className="mt-16 text-center text-sm text-hc-muted/80 flex items-center justify-center gap-1.5">
+          Payload Beta &bull; Made with <svg className="w-4 h-4  inline-block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg> by Floppy 
         </div>
       </div>
     );
@@ -57,14 +83,38 @@ export default async function Dashboard() {
   const slackId = (session.user as typeof session.user & UserWithSlackId).slackId;
   if (!slackId) {
     return (
-      <div className="bg-hc-dark border border-hc-red/50 rounded-hc p-6 max-w-xl mx-auto mt-10 shadow-lg">
-        <div className="flex flex-col gap-2">
-          <h3 className="text-xl font-bold text-hc-red mb-1">Configuration Error</h3>
-          <p className="text-hc-smoke">No Slack ID associated with your Hack Club Auth profile.</p>
-          <div className="mt-4 pt-4 border-t border-hc-darkless">
-            <form action={async () => { "use server"; await signOut(); }}>
-              <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-2 px-4 rounded transition-colors text-sm">Sign out</button>
-            </form>
+      <div className="fixed inset-0 z-50 bg-hc-darker flex flex-col items-center justify-center px-4 py-8 animate-in fade-in duration-500 overflow-hidden">
+        {/* Technical Blueprint/Radar Grid Background */}
+        <div 
+          className="absolute inset-0 pointer-events-none z-0" 
+          style={{
+            backgroundImage: "linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+            backgroundPosition: "center center",
+            maskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 10%, transparent 100%)",
+            WebkitMaskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 10%, transparent 100%)"
+          }}
+        />
+
+        <div className="max-w-2xl w-full text-center space-y-6 relative z-10 flex flex-col items-center">
+          <h1 className="text-5xl md:text-7xl font-black text-hc-snow uppercase tracking-tight drop-shadow-sm">
+            Payload
+          </h1>
+          
+          <div className="bg-hc-dark border border-hc-red/50 rounded-hc p-8 max-w-xl shadow-lg w-full text-left">
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xl font-bold text-hc-red mb-1">Configuration Error</h3>
+              <p className="text-hc-smoke">No Slack ID associated with your Hack Club Auth profile.</p>
+              <div className="mt-4 pt-4 border-t border-hc-darkless">
+                <form action={async () => { "use server"; await signOut(); }}>
+                  <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-2 px-4 rounded transition-colors text-sm w-full">Sign out</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-16 text-center text-sm text-hc-muted/80 flex items-center justify-center gap-1.5">
+            Payload Beta &bull; Made with <svg className="w-4 h-4 text-hc-red inline-block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg> by Floppy 
           </div>
         </div>
       </div>
@@ -77,15 +127,41 @@ export default async function Dashboard() {
 
   if (!isAllowlisted) {
     return (
-      <div className="bg-hc-dark border border-hc-orange/50 rounded-hc p-6 max-w-xl mx-auto mt-10 shadow-lg">
-        <div className="flex flex-col gap-2">
-          <h3 className="text-xl font-bold text-hc-orange mb-1">Access Denied</h3>
-          <p className="text-hc-smoke">Your account is valid but your Slack ID (<code className="bg-hc-darker px-1.5 py-0.5 rounded border border-hc-darkless text-hc-cyan">{slackId}</code>) is not allowlisted to access sandboxes.</p>
-          <p className="text-sm text-hc-muted mt-1">Ask an admin to add your Slack ID to the allowlist.</p>
-          <div className="mt-4 pt-4 border-t border-hc-darkless">
-            <form action={async () => { "use server"; await signOut(); }}>
-              <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-2 px-4 rounded transition-colors text-sm">Sign out</button>
-            </form>
+      <div className="fixed inset-0 z-50 bg-hc-darker flex flex-col items-center justify-center px-4 py-8 animate-in fade-in duration-500 overflow-hidden">
+        {/* Technical Blueprint/Radar Grid Background */}
+        <div 
+          className="absolute inset-0 pointer-events-none z-0" 
+          style={{
+            backgroundImage: "linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+            backgroundPosition: "center center",
+            maskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 10%, transparent 100%)",
+            WebkitMaskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 10%, transparent 100%)"
+          }}
+        />
+
+        <div className="max-w-2xl w-full text-center space-y-6 relative z-10 flex flex-col items-center">
+          <h1 className="text-5xl md:text-7xl font-black text-hc-snow uppercase tracking-tight drop-shadow-sm">
+            Payload
+          </h1>
+          
+          <div className="bg-hc-dark border border-hc-orange/50 rounded-hc p-8 max-w-xl shadow-lg w-full text-left">
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xl font-bold text-hc-orange mb-1">Access Denied</h3>
+              <p className="text-hc-smoke">Your account is valid but your Slack ID (<code className="bg-hc-darker px-1.5 py-0.5 rounded border border-hc-darkless text-hc-cyan">{slackId}</code>) is not allowlisted to access this platform.</p>
+              <p className="text-sm text-hc-muted mt-1">
+                Please <a href={env.SLACK_REQUEST_URL} target="_blank" rel="noopener noreferrer" className="text-hc-cyan hover:underline decoration-hc-cyan/50 underline-offset-4 transition-all">request access in Slack</a> to be allowlisted.
+              </p>
+              <div className="mt-4 pt-4 border-t border-hc-darkless">
+                <form action={async () => { "use server"; await signOut(); }}>
+                  <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-2 px-4 rounded transition-colors text-sm w-full">Sign out</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-16 text-center text-sm text-hc-muted/80 flex items-center justify-center gap-1.5">
+            Payload Beta &bull; Made with <svg className="w-4 h-4 text-hc-red inline-block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg> by Floppy 
           </div>
         </div>
       </div>
@@ -235,6 +311,10 @@ export default async function Dashboard() {
           </div>
         </section>
       )}
+
+      <div className="pt-12 pb-4 text-center text-sm text-hc-muted/80 flex items-center justify-center gap-1.5">
+        Payload Beta &bull; Made with <svg className="w-4 h-4 inline-block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg> by Floppy
+      </div>
     </div>
   );
 }

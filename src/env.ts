@@ -56,6 +56,7 @@ const envSchema = z.object({
     .regex(/^[0-9a-fA-F]{64}$/, "Must be 64 hex characters (32 bytes for AES-256-GCM)"),
 
   // App tuning
+  SLACK_REQUEST_URL: z.string().url().default("https://google.com"),
   SESSION_LIFETIME_MS: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
   IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(30 * 60 * 1000),
   STUCK_TIMEOUT_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
