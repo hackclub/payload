@@ -15,11 +15,6 @@ ENV PNPM_HOME=/pnpm \
     NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable
 
-# ssh for provision-vm jobs
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssh-client ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
 # 2. Install dependencies (cached layer)
 FROM base AS deps
 WORKDIR /app
@@ -54,6 +49,11 @@ RUN pnpm build
 # 4. Final runtime image
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
+
+# ssh for provision-vm jobs
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-client ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
