@@ -3,11 +3,12 @@ import { db } from "@/db";
 import { vmSessions, vmTypes, reviewerAllowlistEntries } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
-import { createUserSession } from "@/lib/sessions";
-import { redirect } from "next/navigation";
 import { vmTypeSeeds } from "@/config/vm-types";
 import DashboardLive from "./DashboardLive";
 import { env } from "@/env";
+import OnboardingModal from "@/components/OnboardingModal";
+import LaunchVmForm from "@/components/LaunchVmForm";
+import { destroySession } from "./page-actions";
 
 type UserWithSlackId = {
   slackId?: string | null;
@@ -188,6 +189,7 @@ export default async function Dashboard() {
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
+      <OnboardingModal />
       <DashboardLive sessions={watchedSessions} />
       <div className="mb-10">
         <h1 className="text-4xl font-bold mb-2 text-hc-snow">My Sessions</h1>
@@ -261,23 +263,26 @@ export default async function Dashboard() {
               {enabledVmTypes.map((vt) => {
                 const seedConfig = vmTypeSeeds.find(v => v.slug === vt.slug);
                 return (
-                <form key={vt.slug} action={async () => { "use server"; await launchVm(vt.slug); }} className="block h-full">
-                  <button type="submit" className="text-left w-full bg-hc-dark hover:bg-[#1a1c23] border border-hc-darkless hover:border-hc-cyan/50 p-6 rounded-hc transition-all duration-200 group h-full flex flex-col shadow-sm">
-                    <div className="flex justify-between items-start mb-4 w-full">
-                      <div className="flex items-center gap-3">
-                        {seedConfig?.iconUrl && (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={seedConfig.iconUrl} alt={vt.displayName} className="w-8 h-8 object-contain" />
-                        )}
-                        <h3 className="text-lg font-bold text-hc-smoke group-hover:text-hc-cyan transition-colors">{vt.displayName}</h3>
-                      </div>
-                      <div className="w-8 h-8 rounded-full bg-hc-darkless flex shrink-0 items-center justify-center text-hc-cyan group-hover:bg-hc-cyan group-hover:text-hc-darker transition-colors ml-4">
-                        <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                      </div>
+                <LaunchVmForm
+                  key={vt.slug}
+                  vmTypeSlug={vt.slug}
+                  vmDisplayName={vt.displayName}
+                  isExpensive={!!seedConfig?.expensive}
+                >
+                  <div className="flex justify-between items-start mb-4 w-full">
+                    <div className="flex items-center gap-3">
+                      {seedConfig?.iconUrl && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={seedConfig.iconUrl} alt={vt.displayName} className="w-8 h-8 object-contain" />
+                      )}
+                      <h3 className="text-lg font-bold text-hc-smoke group-hover:text-hc-cyan transition-colors">{vt.displayName}</h3>
                     </div>
-                    <p className="text-sm text-hc-muted mt-auto leading-relaxed">{seedConfig?.description ?? "Click to provision a new instance of this environment."}</p>
-                  </button>
-                </form>
+                    <div className="w-8 h-8 rounded-full bg-hc-darkless flex shrink-0 items-center justify-center text-hc-cyan group-hover:bg-hc-cyan group-hover:text-hc-darker transition-colors ml-4">
+                      <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    </div>
+                  </div>
+                  <p className="text-sm text-hc-muted mt-auto leading-relaxed">{seedConfig?.description ?? "Click to provision a new instance of this environment."}</p>
+                </LaunchVmForm>
                 );
               })}
             </div>
@@ -319,23 +324,3 @@ export default async function Dashboard() {
   );
 }
 
-async function launchVm(vmTypeSlug: string) {
-  "use server";
-  const { getAllowlistedUser } = await import("@/lib/auth-guard");
-  const authResult = await getAllowlistedUser();
-  if (!authResult) throw new Error("Unauthorized");
-
-  const session = await createUserSession(authResult.userId, vmTypeSlug);
-  redirect(`/sessions/${session.id}`);
-}
-
-async function destroySession(sessionId: number) {
-  "use server";
-  const { getAllowlistedUser } = await import("@/lib/auth-guard");
-  const authResult = await getAllowlistedUser();
-  if (!authResult) throw new Error("Unauthorized");
-
-  const { enqueueTerminateVm } = await import("@/lib/queue");
-  await enqueueTerminateVm({ sessionId, reason: "user" });
-  redirect("/");
-}

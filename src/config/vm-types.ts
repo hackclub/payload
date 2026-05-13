@@ -15,6 +15,7 @@ export const vmTypeSeeds = [
         iconUrl:
             "https://cdn.hackclub.com/019e129d-bd95-7d3f-b952-eaffec41afc3/devicon--debian.png",
         bootDelayMs: 0,
+        expensive: false,
     },
     {
         slug: "windows",
@@ -30,6 +31,7 @@ export const vmTypeSeeds = [
         iconUrl:
             "https://cdn.hackclub.com/019e129d-c001-7ffc-8288-0fd14cf9dae3/devicon--windows11.png",
         bootDelayMs: 0,
+        expensive: false,
     },
     {
         slug: "android",
@@ -47,6 +49,7 @@ export const vmTypeSeeds = [
         // droidVNC-NG only starts after Android finishes booting, so give it
         // a head start before we let Guacamole try the VNC handshake.
         bootDelayMs: 4000,
+        expensive: false,
     },
     {
         slug: "macos",
@@ -62,5 +65,6 @@ export const vmTypeSeeds = [
         iconUrl:
             "https://cdn.hackclub.com/019e129d-b89d-708b-a515-d8979405d1a8/ic--baseline-apple.png",
         bootDelayMs: 0,
+        expensive: true,
     },
 ] as const;
