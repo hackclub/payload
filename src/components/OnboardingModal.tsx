@@ -23,7 +23,7 @@ export default function OnboardingModal() {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 m-0">
       <div className="bg-hc-dark border border-hc-darkless rounded-hc shadow-2xl max-w-lg w-full p-8 space-y-6 animate-in fade-in zoom-in-95 duration-200 m-0">
         <div className="space-y-2">
           <h2 className="text-2xl font-bold text-hc-snow">Hello!!</h2>

@@ -54,7 +54,7 @@ export default function LaunchVmForm({ vmTypeSlug, isExpensive, vmDisplayName, c
       </button>
 
       {showWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 m-0">
           <div className="bg-hc-dark border border-hc-orange/50 rounded-hc shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-hc-orange/10 border border-hc-orange/20 flex items-center justify-center shrink-0">
