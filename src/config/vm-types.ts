@@ -48,7 +48,7 @@ export const vmTypeSeeds = [
             "https://cdn.hackclub.com/019e129d-bb06-7cbd-bc0f-b5ae86029a35/devicon--android.png",
         // droidVNC-NG only starts after Android finishes booting, so give it
         // a head start before we let Guacamole try the VNC handshake.
-        bootDelayMs: 4000,
+        bootDelayMs: 6000,
         expensive: false,
     },
     {
