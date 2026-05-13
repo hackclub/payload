@@ -175,8 +175,13 @@ HACKCLUB_OIDC_REDIRECT_URI=https://payload.hackclub.com/api/auth/callback/hackcl
 AUTH_SECRET=...                     # openssl rand -base64 48
 
 # ── Database (compose-internal hostnames) ────────────────────────────────
-POSTGRES_PASSWORD=...               # openssl rand -base64 32
-DATABASE_URL=postgres://payload:${POSTGRES_PASSWORD}@db:5432/payload
+# Pick a strong password, then INLINE it into DATABASE_URL below — neither
+# dotenv (used by db:migrate / db:seed) nor compose's env_file expand
+# ${POSTGRES_PASSWORD} references inside the same file. The `${...}` form
+# silently ships to the container/script as a literal string and Postgres
+# rejects it with "password authentication failed".
+POSTGRES_PASSWORD=PASTE_THE_SAME_PASSWORD_HERE       # openssl rand -base64 32
+DATABASE_URL=postgres://payload:PASTE_THE_SAME_PASSWORD_HERE@db:5432/payload
 REDIS_URL=redis://redis:6379
 
 # ── Proxmox ──────────────────────────────────────────────────────────────
@@ -201,20 +206,29 @@ GUACAMOLE_ADMIN_PASSWORD=...
 SESSION_ENCRYPTION_KEY=...          # openssl rand -hex 32   (64 hex chars)
 ```
 
-**Two `.env` files matter** during deploy:
+**Two `.env` files matter** during deploy. This is the single most common
+trip wire — read it twice:
 
-- `.env.production` — used by `docker compose --env-file` and baked into the
-  app container at runtime
-- `.env` — used by `pnpm db:migrate` / `pnpm db:seed` from the host
+| File | Used by | Hostnames |
+|------|---------|-----------|
+| `.env.production` | `docker compose --env-file` (baked into the app container at runtime) | compose service names: `db`, `redis` |
+| `.env` | host-side scripts: `pnpm db:migrate`, `pnpm db:seed`, `pnpm payload …` | `127.0.0.1` (compose publishes Postgres on `127.0.0.1:5432` and Redis on `127.0.0.1:6379`) |
 
-For the host-side scripts, point `DATABASE_URL` at the localhost-published
-Postgres (compose binds it to `127.0.0.1:5432`):
+The host has no DNS for `db` / `redis`, so a host-side `pnpm db:migrate`
+against `@db:5432` fails with `getaddrinfo ENOTFOUND db`. Build `.env` by
+copying `.env.production` and rewriting just those two URLs:
 
 ```bash
 cp .env.production .env
 sed -i 's|@db:5432/|@127.0.0.1:5432/|' .env
 sed -i 's|//redis:6379|//127.0.0.1:6379|' .env
 chmod 600 .env
+
+# Verify the rewrite landed:
+grep -E '^(DATABASE_URL|REDIS_URL)=' .env
+# expect:
+#   DATABASE_URL=postgres://payload:...@127.0.0.1:5432/payload
+#   REDIS_URL=redis://127.0.0.1:6379
 ```
 
 ---
@@ -472,6 +486,15 @@ node -e "import('./src/lib/queue/index.js').then(({vmQueue}) => \
 
 ## 14. Gotchas
 
+- **`${VAR}` references inside `.env` / `.env.production` are NOT expanded.**
+  Both `dotenv` (host-side scripts) and Docker Compose's `env_file:`
+  directive ship the value to the consumer as a literal string. Writing
+  `DATABASE_URL=postgres://payload:${POSTGRES_PASSWORD}@db:5432/payload`
+  yields the literal string `${POSTGRES_PASSWORD}` as the password and
+  Postgres returns `password authentication failed for user "payload"`.
+  Inline the password into `DATABASE_URL` directly. (`docker compose run`
+  with `--env` from the shell *does* expand because the shell does it
+  before compose ever sees the value — but that's not what we use here.)
 - **LXC `nesting=1` and `keyctl=1` are not optional** for Docker. If you
   see weird `mkdir`/`chown` errors during `docker build`, the LXC was
   created without them. Recreate it; don't try to retrofit.

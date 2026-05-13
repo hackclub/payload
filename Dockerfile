@@ -9,7 +9,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 1. Base image with pnpm enabled
-FROM node:20-bookworm-slim AS base
+FROM node:lts-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     NEXT_TELEMETRY_DISABLED=1
