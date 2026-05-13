@@ -1,0 +1,72 @@
+# Production stack for the Payload LXC.
+#
+# Runs the Next.js app, Postgres, and Redis as one self-contained unit.
+# Migrations are intentionally run from the host (`pnpm db:migrate`) before
+# bringing the app up so a bad migration cannot crash-loop the runtime.
+#
+# Usage on the LXC:
+#   cp env.example .env.production && $EDITOR .env.production
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Caddy (running on the host or another container) proxies
+# https://payload.hackclub.com/  →  http://127.0.0.1:3000
+# https://payload.hackclub.com/guac/* → the Guacamole LXC (separate service).
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: payload
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: payload
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Bind to localhost only — the app container reaches it over the compose
+    # network; nothing outside the LXC needs the port.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payload -d payload"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: payload:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    # `app` reaches the in-compose Postgres/Redis by service name. The .env
+    # file should set:
+    #   DATABASE_URL=postgres://payload:${POSTGRES_PASSWORD}@db:5432/payload
+    #   REDIS_URL=redis://redis:6379
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  pgdata:
+  redisdata:

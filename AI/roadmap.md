@@ -7,9 +7,11 @@ Goal: remove the Rails implementation and establish a clean Next.js foundation.
 - [x] `pnpm create next-app` with TypeScript, App Router, ESLint, and `src/`
 - [x] Tailwind CSS v4 + FlyonUI installed
 - [x] Hack Club theme, Phantom Sans, and base layout wired
-- [ ] Dockerfile using Next.js standalone output
-- [x] `docker-compose.yml` for Postgres and Redis in local/dev deploys (app
-      runs on host; Dockerfile is the missing piece)
+- [x] Dockerfile using Next.js standalone output (`Dockerfile` at repo root,
+      `output: "standalone"` set in `next.config.ts`)
+- [x] `docker-compose.yml` for Postgres and Redis in local/dev deploys
+- [x] `docker-compose.prod.yml` for the LXC production stack (app + Postgres
+      + Redis, Caddy on the host)
 - [x] `env.ts` with Zod validation (validated env schema in `src/env.ts`, all
       modules now import from it instead of `process.env` directly)
 
@@ -72,9 +74,13 @@ to v2.x.
 - [x] Session-end screen with reason
 - [x] Error states designed (terminated, errored, stuck)
 - [ ] Error states tested (no test suite yet)
-- [ ] Production Docker image deployed
-- [ ] Production secrets configured
-- [ ] Runbooks updated from real deployment notes
+- [x] Production Docker image build defined (`Dockerfile` + standalone output;
+      first deploy to the Payload LXC pending operator action)
+- [x] Production deployment runbook written
+      (`AI/runbooks/deploy-payload-lxc.md`) — Debian 12 LXC + Docker +
+      Caddy on the same Proxmox cluster as the Guacamole LXC
+- [ ] Production secrets configured (operator step on first deploy)
+- [ ] Runbooks updated from real deployment notes (after first prod deploy)
 
 ## v1.x — Polish
 

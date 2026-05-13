@@ -4,6 +4,9 @@ Operational procedures for the on-call human. Keep copy-paste ready and current.
 
 ## Index
 
+- [deploy-payload-lxc.md](./deploy-payload-lxc.md) — deploy the Payload
+  Next.js app + Postgres + Redis + Caddy as Docker containers inside a
+  Debian 12 LXC on the same Proxmox cluster (canonical production deploy)
 - [setup-guacamole-lxc.md](./setup-guacamole-lxc.md) — first-time setup of the
   Guacamole LXC on Proxmox (operator guide for Milestone 3)
 - [build-linux-template.md](./build-linux-template.md) — build the Debian 12

@@ -492,3 +492,78 @@ agent (LaunchDaemon).
   the clipboard is the only host → VM data channel.
 - macOS sessions, when added in v2.x, must explicitly state "clipboard not
   supported" in the UI until the agent path lands.
+
+---
+
+## ADR-0029 — Production deploy is Docker-in-LXC on the same Proxmox cluster
+
+**Date:** 2026-05-13 | **Status:** Accepted
+
+ADR-0019 locked the deploy artifact as a plain Docker image and noted that
+Coolify is "likely later". For the v1 production deploy we needed a concrete
+host. Three options were on the table: (a) a managed Coolify host, (b) a
+dedicated VM somewhere off-cluster, (c) a Debian 12 LXC on the same Proxmox
+cluster that already runs the Guacamole LXC and the ephemeral VMs.
+
+**Decision:** v1 production runs option (c). One Debian 12 LXC named
+`payload-app` (CTID `9100`) on the Proxmox cluster, with Docker Engine
+installed inside, running the Payload Next.js container plus a `postgres:16`
+sidecar (app DB) and a `redis:7` sidecar (BullMQ broker) via
+`docker-compose.prod.yml`. Caddy on the same LXC terminates TLS for
+`payload.hackclub.com` and proxies `/guac/*` to the Guacamole LXC per
+ADR-0008.
+
+The LXC is created `unprivileged` with `nesting=1` and `keyctl=1`, which is
+the minimum surface Docker's overlayfs and cgroupv2 need to work cleanly.
+
+The canonical operator guide is
+`AI/runbooks/deploy-payload-lxc.md`. Migrations and seeds run from the LXC
+host (`pnpm db:migrate`, `pnpm db:seed`) against the compose-published
+`127.0.0.1:5432` Postgres before the app container is started, so a bad
+migration cannot crash-loop the runtime.
+
+**Consequences:**
+
+- Same operational model as Guacamole: SSH into Proxmox, `pct enter` an LXC,
+  read `docker compose logs`. No new platform to learn.
+- Single network boundary — Proxmox API, Guacamole REST, and ephemeral VM
+  RDP/VNC all reach the app over the LAN bridge `vmbr0` without going
+  through the public proxy.
+- The `postgres` and `redis` data live in named Docker volumes inside the
+  LXC. They are backed up via `pg_dump` (Guacamole's DB stays throwaway).
+- Coolify is still the most likely future migration if we want CI-driven
+  deploys; the Docker image and `docker-compose.prod.yml` stay portable.
+- Two `.env` files coexist on the LXC by design: `.env.production` for
+  compose (uses service hostnames `db` / `redis`) and `.env` for host-side
+  scripts (uses `127.0.0.1`). The runbook documents this explicitly.
+
+---
+
+## ADR-0030 — Standalone Next.js output for the production image
+
+**Date:** 2026-05-13 | **Status:** Accepted
+
+The Dockerfile we ship for ADR-0029 needed an opinion on what to put in
+the runtime image. Options considered: (a) `next start` against a full
+working tree with `node_modules`, (b) Next.js `output: "standalone"` which
+ships a self-contained `server.js` plus a pruned `node_modules` subset.
+
+**Decision:** Use `output: "standalone"` (set in `next.config.ts`). The
+multi-stage `Dockerfile` builds in a `node:20-bookworm-slim` builder and
+copies `.next/standalone`, `.next/static`, and `public` into a clean
+runtime stage. Drizzle migrations, `scripts/`, and `src/` are also copied
+so one-shot tasks (`pnpm db:migrate`, `pnpm db:seed`, `pnpm payload …`)
+can run from the source tree on the LXC host against the same image's
+database.
+
+**Consequences:**
+
+- Runtime image is small (~250 MB) and contains no build toolchain.
+- The image boots `node server.js` directly — no `next start` overhead.
+- `tsx` and `drizzle-kit` are devDependencies and are *not* in the
+  runtime image, so migrations and seeds are run from the LXC host (which
+  has Node 20 + pnpm) against the `127.0.0.1:5432` published Postgres.
+  The runbook calls this out as the deploy ordering requirement.
+- The build stage uses placeholder env values to satisfy `src/env.ts`'s
+  Zod schema during `next build`; real secrets come from
+  `.env.production` at runtime only.

@@ -25,6 +25,8 @@ hours** (hard cap) or **30 minutes** of browser inactivity, whichever comes firs
 11. [decisions.md](./decisions.md) — log of architectural decisions
 12. [roadmap.md](./roadmap.md) — v1 scope and future work
 13. [runbooks/](./runbooks) — operational procedures
+    - [runbooks/deploy-payload-lxc.md](./runbooks/deploy-payload-lxc.md) —
+      production deploy guide (Docker-in-LXC on Proxmox)
 
 ## Operating principles for agents
 
