@@ -18,7 +18,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Payload | Hack Club",
+  title: "Payload",
   description: "Provide sandboxed desktop VMs for reviewers",
 };
 
