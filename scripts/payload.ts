@@ -150,34 +150,35 @@ async function testGuacamoleConnection() {
   try {
     console.log(`→ Creating ${protocol.toUpperCase()} connection ${connectionName} → ${vmIp}:${port}...`);
     const parameters: Record<string, string> =
-      protocol === "rdp"
-        ? {
-            hostname: vmIp,
-            port,
-            username: vmUsername,
-            password: vmPassword,
-            "ignore-cert": "true",
-            security: process.env.GUAC_TEST_RDP_SECURITY ?? "any",
-            "disable-auth": "false",
-            "resize-method": "display-update",
-            "color-depth": "24",
-            "enable-wallpaper": "true",
-            "enable-theming": "true",
-            "enable-font-smoothing": "true",
-            "enable-full-window-drag": "true",
-            "enable-desktop-composition": "true",
-            "enable-menu-animations": "true",
-            "disable-copy": "true",
-            "disable-paste": "false",
-          }
-        : {
-            hostname: vmIp,
-            port,
-            password: vmPassword,
-            "color-depth": "24",
-            "disable-copy": "true",
-            "disable-paste": "false",
-          };
+        protocol === "rdp"
+            ? {
+                  hostname: vmIp,
+                  port,
+                  username: vmUsername,
+                  password: vmPassword,
+                  "ignore-cert": "true",
+                  security: process.env.GUAC_TEST_RDP_SECURITY ?? "any",
+                  "disable-auth": "false",
+                  "resize-method": "display-update",
+                  "color-depth": "24",
+                  "enable-wallpaper": "true",
+                  "enable-theming": "true",
+                  "enable-font-smoothing": "true",
+                  "enable-full-window-drag": "true",
+                  "enable-desktop-composition": "true",
+                  "enable-menu-animations": "true",
+                  "disable-copy": "true",
+                  "disable-paste": "false",
+              }
+            : {
+                  hostname: vmIp,
+                  username: vmUsername,
+                  port,
+                  password: vmPassword,
+                  "color-depth": "24",
+                  "disable-copy": "true",
+                  "disable-paste": "false",
+              };
 
     const created = await client.createConnection({
       name: connectionName,
