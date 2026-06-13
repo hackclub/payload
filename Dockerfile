@@ -13,7 +13,7 @@ FROM node:lts-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     NEXT_TELEMETRY_DISABLED=1
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 # 2. Install dependencies (cached layer)
 FROM base AS deps
