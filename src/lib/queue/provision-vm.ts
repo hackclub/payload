@@ -140,6 +140,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
             "enable-full-window-drag": "true",
             "enable-desktop-composition": "true",
             "enable-menu-animations": "true",
+            "enable-audio": "true",
             "disable-copy": "true",
             "disable-paste": "false",
           }
@@ -149,6 +150,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
             ...(vmUsername ? { username: vmUsername } : {}),
             password: vmPassword,
             "color-depth": "24",
+            "enable-audio": "true",
             "disable-copy": "true",
             "disable-paste": "false",
           };
