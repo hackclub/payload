@@ -59,7 +59,7 @@ export const vmTypeSeeds = [
         protocol: "vnc",
         defaultPort: 5900,
         enabled: true,
-        description: "MacOS Sequioa (15)",
+        description: "MacOS Sequioa (15) (Intel)",
         username: "shipwrights",
         password: "shipwrights",
         iconUrl:
