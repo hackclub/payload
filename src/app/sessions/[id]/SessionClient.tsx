@@ -45,6 +45,74 @@ export default function SessionClient({
   const showDestroyConfirmRef = useRef(showDestroyConfirm);
   showDestroyConfirmRef.current = showDestroyConfirm;
 
+  // -------------------------------------------------------------------
+  // Firefox "Paste" menu suppression.
+  //
+  // Guacamole 1.6's webapp calls navigator.clipboard.readText() from a
+  // capture-phase window "focus" listener (indexController.js →
+  // clipboardService.resyncClipboard) to sync the host clipboard into the
+  // VM. Firefox has no persistent clipboard-read permission: readText()
+  // while the window holds transient user activation pops a native
+  // one-item "Paste" context menu that the user must click to allow the
+  // read. A click inside the iframe grants its window ~5s of transient
+  // activation, so the repro was: click in the VM, then click the floating
+  // island → focus bounces parent→iframe → Guacamole resyncs → readText()
+  // → "Paste" menu at the cursor, swallowing the next click.
+  //
+  // Fix: replace readText inside the (same-origin) iframe with a stub that
+  // rejects, which Guacamole treats as "clipboard unavailable" and ignores
+  // (verified against guacamole-client 1.6.0 clipboardService.js — the
+  // readText branch returns early, so the execCommand('paste') fallback
+  // does NOT run). Nothing is lost: host→VM paste is driven from the
+  // parent by sendClipboardToVm(), and VM→host copy uses writeText(),
+  // which is untouched.
+  //
+  // The patch is (re-)applied idempotently from focusIframe(), i.e.
+  // synchronously BEFORE focus is handed to the iframe and Guacamole's
+  // focus listener can run — NOT just once on iframe load. Load-only
+  // patching proved fragile: any inner navigation creates a fresh window
+  // whose native clipboard object is unpatched, and dev HMR swaps the
+  // component without ever re-firing the iframe's load event.
+  const clipboardNeedsNeuteringRef = useRef(false);
+  const ensureIframeClipboardNeutered = useCallback(() => {
+    if (!clipboardNeedsNeuteringRef.current) return;
+    try {
+      const clip = iframeRef.current?.contentWindow?.navigator.clipboard;
+      if (!clip) return;
+      const current = clip.readText as { payloadNeutered?: boolean } | undefined;
+      if (current?.payloadNeutered) return; // this inner window is already patched
+      const stub = Object.assign(
+        () =>
+          Promise.reject(
+            new DOMException("Clipboard read disabled by host page", "NotAllowedError"),
+          ),
+        { payloadNeutered: true },
+      );
+      clip.readText = stub;
+      console.debug("[payload] neutered Guacamole clipboard readText (no silent clipboard-read permission in this browser)");
+    } catch {
+      // can't reach into the iframe — leave native behavior
+    }
+  }, []);
+
+  // Detect once whether this browser has a real clipboard-read permission
+  // model. Chromium: permissions.query resolves and reads are silently
+  // granted (or use a normal one-time permission dialog) — leave
+  // Guacamole's focus-time clipboard sync alone there. Firefox (and
+  // Safari) throw a TypeError because "clipboard-read" is not in their
+  // PermissionName enum — verified against Firefox 150 — and pop the
+  // per-call "Paste" menu instead, so there we neuter reads in the iframe.
+  useEffect(() => {
+    (async () => {
+      try {
+        await navigator.permissions.query({ name: "clipboard-read" as PermissionName });
+      } catch {
+        clipboardNeedsNeuteringRef.current = true;
+        ensureIframeClipboardNeutered();
+      }
+    })();
+  }, [ensureIframeClipboardNeutered]);
+
   // Focus the iframe so keystrokes reach the embedded Guacamole client.
   // Without this, clicks on the parent page (floating UI buttons, etc.)
   // steal keyboard focus and the remote VM stops receiving keys.
@@ -59,6 +127,9 @@ export default function SessionClient({
     if (showDestroyConfirmRef.current) return;
     const iframe = iframeRef.current;
     if (!iframe) return;
+    // Guacamole reads the clipboard the moment its window gains focus —
+    // make sure that read is neutered BEFORE handing focus over.
+    ensureIframeClipboardNeutered();
     // Avoid redundant focus() calls — they're not free and can interrupt
     // event delivery inside the iframe.
     if (document.activeElement === iframe) return;
@@ -68,7 +139,7 @@ export default function SessionClient({
     } catch {
       // cross-origin (shouldn't happen for same-origin /guac, but be safe)
     }
-  }, []);
+  }, [ensureIframeClipboardNeutered]);
 
   // Send the host clipboard into the VM as a single paste action.
   //
@@ -119,45 +190,6 @@ export default function SessionClient({
       setTimeout(() => setPasteFlash("idle"), 1200);
     }
   }, [focusIframe]);
-
-  // Disable navigator.clipboard.readText() inside the (same-origin) iframe
-  // on browsers that lack a persistent clipboard-read permission.
-  //
-  // Guacamole 1.6 calls readText() from its own window "focus" handler to
-  // sync the host clipboard into the VM. Chromium grants clipboard-read
-  // once via the Permissions API, so those reads are silent. Firefox has no
-  // such permission — EVERY readText() pops the native per-call "Paste"
-  // authorization menu at the cursor. So any focus bounce into the iframe
-  // (clicking back into it, or our own focusIframe() calls) popped that
-  // menu and swallowed the user's next click.
-  //
-  // The iframe never needs to read the host clipboard itself: host→VM paste
-  // is driven from the parent by sendClipboardToVm(), which reads the
-  // clipboard up here (one user gesture on the paste button) and dispatches
-  // a synthetic paste event into the iframe. VM→host copy uses
-  // clipboard.writeText(), which is untouched.
-  //
-  // Feature detection rather than UA sniffing: permissions.query({name:
-  // "clipboard-read"}) resolves only on engines with a real clipboard
-  // permission model (Chromium); Firefox and Safari reject, and there the
-  // patch applies.
-  const disableIframeClipboardRead = useCallback(async () => {
-    try {
-      await navigator.permissions.query({ name: "clipboard-read" as PermissionName });
-      return; // permission model exists — Guacamole's focus-sync reads are silent
-    } catch {
-      // no clipboard-read permission (Firefox/Safari) — fall through and patch
-    }
-    try {
-      const clip = iframeRef.current?.contentWindow?.navigator.clipboard;
-      if (clip) {
-        clip.readText = () =>
-          Promise.reject(new DOMException("Clipboard read disabled by host page", "NotAllowedError"));
-      }
-    } catch {
-      // couldn't reach into the iframe — leave Guacamole's default behavior
-    }
-  }, []);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -242,33 +274,27 @@ export default function SessionClient({
 
   // Re-focus the iframe whenever the window/tab regains focus or visibility.
   //
-  // Guard: when the iframe holds focus and the user clicks parent UI (the
-  // floating island), focus crosses the frame boundary back to the parent
-  // and — in Firefox especially — fires the same window "focus" event as a
-  // genuine alt-tab back. Refocusing the iframe at that instant yanks focus
-  // away mid-click and triggers Guacamole's focus-time clipboard sync, so
-  // the island click is lost. A real tab re-activation has no preceding
-  // pointerdown on our document (the click-induced bounce always does,
-  // since focus moves as part of mousedown's default action), so ignore
-  // "focus" events that arrive right after one.
+  // NOTE: this deliberately also fires for *intra-page* focus bounces — in
+  // Firefox, clicking the floating island while the iframe holds focus
+  // fires a window "focus" event on the parent, and this handler
+  // immediately hands focus back to the iframe. That is load-bearing:
+  // Guacamole preventDefault()s mousedown over its display, which blocks
+  // the browser's native focus-on-click, so clicking back into the iframe
+  // does NOT focus it. Without this eager refocus, keyboard focus gets
+  // stranded on the parent after any island interaction (keystrokes stop
+  // reaching the VM, and space/enter can re-trigger the last island
+  // button). The refocus used to pop Firefox's clipboard "Paste" menu via
+  // Guacamole's focus-time clipboard sync; that is now neutered at the
+  // source by disableIframeClipboardRead(), so the bounce is harmless.
   useEffect(() => {
     if (!iframeUrl) return;
-    let lastParentPointerDown = 0;
-    const onPointerDown = () => {
-      lastParentPointerDown = performance.now();
-    };
-    const onWindowFocus = () => {
-      if (performance.now() - lastParentPointerDown < 250) return;
-      focusIframe();
-    };
+    const onWindowFocus = () => focusIframe();
     const onVisibility = () => {
       if (document.visibilityState === "visible") focusIframe();
     };
-    document.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("focus", onWindowFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("focus", onWindowFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -586,12 +612,7 @@ export default function SessionClient({
             className="w-full h-full border-0"
             allow="clipboard-read; clipboard-write; fullscreen"
             title="Remote Desktop"
-            onLoad={async () => {
-              // Patch before the first focus so Guacamole's focus handler
-              // never runs an unneutered clipboard read.
-              await disableIframeClipboardRead();
-              focusIframe();
-            }}
+            onLoad={focusIframe}
           />
         ) : isPending ? (
           <div className="flex flex-col items-center gap-5 animate-in fade-in duration-700">
