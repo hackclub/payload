@@ -38,7 +38,7 @@ export default async function SessionPage({
       initialState={state}
       vmTypeName={vmTypeName}
       vmIcon={vmIcon}
-      expiresAt={vmSession.expiresAt.toISOString()}
+      expiresAt={vmSession.expiresAt?.toISOString() ?? null}
       terminationReason={vmSession.terminationReason ?? undefined}
     />
   );

@@ -9,7 +9,8 @@ type SessionClientProps = {
   initialState: string;
   vmTypeName: string;
   vmIcon: string | null;
-  expiresAt: string;
+  // null while a session is queued/warming (TTL clock starts at claim, ADR-0033).
+  expiresAt: string | null;
   terminationReason?: string;
 };
 
@@ -339,6 +340,11 @@ export default function SessionClient({
   // Countdown timer
   useEffect(() => {
     const update = () => {
+      if (!expiresAt) {
+        // Queued/warming: no TTL yet.
+        setTimeRemaining("—");
+        return;
+      }
       const ms = new Date(expiresAt).getTime() - Date.now();
       if (ms <= 0) {
         setTimeRemaining("Expired");

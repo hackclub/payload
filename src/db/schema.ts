@@ -80,11 +80,23 @@ export const vmTypes = pgTable("vm_types", {
   // connection being created. Used for VMs (e.g. Android) whose remote
   // display server only starts after the OS finishes booting.
   bootDelayMs: integer("boot_delay_ms").notNull().default(0),
+  // Warm-pool target: how many pre-booted, ownerless VMs of this type the
+  // reconciler tries to keep ready (ADR-0033). 0 = never pre-warm.
+  warmPoolSize: integer("warm_pool_size").notNull().default(0),
+  // Configured RAM (MB) for a VM of this type. Used for warm-pool budget
+  // accounting against PAYLOAD_VM_MEMORY_BUDGET_MB.
+  memoryMb: integer("memory_mb").notNull().default(4096),
+  // Costlier type (e.g. macOS). First candidate for pool sacrifice under
+  // budget pressure; UI/pool policy may treat it more conservatively.
+  expensive: boolean("expensive").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const vmSessionState = pgEnum("vm_session_state", [
+  // Pre-booted, ownerless VM waiting in the warm pool (ADR-0033). No user_id,
+  // no expires_at, no Guacamole footprint until claimed.
+  "warm",
   "pending",
   "provisioning",
   "ready",
@@ -98,9 +110,8 @@ export const vmSessions = pgTable(
   "vm_sessions",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    // Nullable: warm-pool VMs are ownerless until claimed (ADR-0033).
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
     vmTypeId: integer("vm_type_id")
       .notNull()
       .references(() => vmTypes.id),
@@ -112,7 +123,10 @@ export const vmSessions = pgTable(
     guacamoleConnectionId: text("guacamole_connection_id"),
     guacamoleUsername: text("guacamole_username"),
     guacamolePasswordCiphertext: text("guacamole_password_ciphertext"),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // Nullable: the 6h TTL clock starts at claim, not while warm (ADR-0033).
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    // When a warm VM was claimed by a user (null while warm).
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
     terminatedAt: timestamp("terminated_at", { withTimezone: true }),
     terminationReason: text("termination_reason"),
@@ -124,6 +138,11 @@ export const vmSessions = pgTable(
     stateExpiresIdx: index("vm_sessions_state_expires_idx").on(table.state, table.expiresAt),
     stateHeartbeatIdx: index("vm_sessions_state_heartbeat_idx").on(table.state, table.lastHeartbeatAt),
     proxmoxVmidIdx: uniqueIndex("vm_sessions_proxmox_vmid_idx").on(table.proxmoxVmid),
+    // Fast warm-pool lookups: "warm VMs of type X" for claim + reconcile.
+    // Composite (not partial) on purpose: a `WHERE state = 'warm'` predicate
+    // would use the just-added enum value in the same migration transaction,
+    // which Postgres rejects. This composite serves the same query.
+    stateTypeIdx: index("vm_sessions_state_type_idx").on(table.state, table.vmTypeId),
   }),
 );
 

@@ -21,8 +21,8 @@ Goal: a small set of Hack Club reviewers can log in, spawn a Linux, Windows, or
 Android VM, use it for up to 6 hours, and walk away.
 
 Scope note: v1 was originally Linux-only (ADR-0010, ADR-0020) but expanded to
-ship Linux, Windows, and Android together (ADR-0024). macOS is still deferred
-to v2.x.
+ship Linux, Windows, and Android together (ADR-0024), and macOS was later
+enabled as a fourth type (ADR-0031, `expensive`, clipboard unsupported).
 
 ### Milestone 1 — App skeleton
 
@@ -69,6 +69,7 @@ to v2.x.
 - [x] Linux VM tile works end to end (production deploy still pending)
 - [x] Windows VM tile works end to end (production deploy still pending)
 - [x] Android VM tile works end to end (production deploy still pending)
+- [x] macOS VM tile enabled (ADR-0031; clipboard unsupported per ADR-0028)
 - [x] Time-remaining countdown (live HH:MM:SS per session)
 - [ ] Warning toasts before TTL expiry (10 min, 1 min)
 - [x] Session-end screen with reason
@@ -93,6 +94,9 @@ to v2.x.
 - [ ] Per-session VM credentials (replace fixed `vm_types.username` /
       `vm_types.password`)
 - [ ] Compute-cost dashboard
+- [ ] Warm VM pool: pre-boot a configurable number of clones per VM type so a
+      claim is near-instant (split provisioning into warm + bind phases, claim
+      with `FOR UPDATE SKIP LOCKED`, reset the 6 h TTL at claim). See ADR-0033.
 
 ## v2 — Custom Guacamole client
 
@@ -104,7 +108,8 @@ to v2.x.
 
 Each adds a new `vm_types` row and a verified Proxmox template.
 
-- [ ] macOS Sonoma+: OpenCore on Proxmox; EULA risk accepted in ADR-0007
+- [x] macOS Sequoia (15): OpenCore on Proxmox; EULA risk accepted in ADR-0007.
+      Pulled forward into v1 (ADR-0031). Clipboard still unsupported (ADR-0028).
 
 Android IP discovery (current Android image): the BlissOS template is reachable
 on the same Proxmox neighbor-table path used for Linux/Windows. If a future

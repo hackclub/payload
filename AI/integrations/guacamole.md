@@ -115,9 +115,10 @@ Same shape, but `protocol` is `rdp` and parameters include:
   "username": "shipwrights",
   "password": "<vm credential>",
   "ignore-cert": "true",
-  "security": "tls",
+  "security": "any",
   "disable-auth": "false",
   "resize-method": "display-update",
+  "enable-audio": "true",
   "disable-copy": "true",
   "disable-paste": "false"
 }
@@ -221,11 +222,12 @@ This works for the v1 OSes without any host-side agent:
 | Windows 11 | RDP | Clipboard redirection is on by default in the RDP client/server. |
 | BlissOS / Android | VNC | The VNC server honors the standard RFB `ClientCutText` message. |
 
-macOS is intentionally **not** supported on this clipboard path. Apple's
-Screen Sharing speaks a non-standard VNC dialect that does not implement
-`ClientCutText`, so a future macOS template needs either a third-party
-RFB-compliant server or a small in-VM clipboard agent. macOS is deferred to
-v2.x; until then, document "clipboard not supported on macOS sessions".
+macOS **ships in v1** (ADR-0031) but is intentionally **not** supported on this
+clipboard path. Apple's Screen Sharing speaks a non-standard VNC dialect that
+does not implement `ClientCutText`, so the macOS template needs either a
+third-party RFB-compliant server or a small in-VM clipboard agent before
+clipboard can work. Until that lands, the session UI must show "clipboard not
+supported on macOS sessions".
 
 ## Known gotchas
 
@@ -233,4 +235,7 @@ v2.x; until then, document "clipboard not supported on macOS sessions".
   redirection enabled in the guest.
 - Tokens in iframe URLs can appear in browser history. Keep TTL short and do not
   log URLs with query strings.
-- Audio is off by default and not worth v1 complexity.
+- `security` for RDP is `any` in the deployed code, not `tls` (ADR-0026): not
+  every Windows/xrdp build negotiates TLS cleanly.
+- Audio **is** enabled (`enable-audio: "true"`) on both RDP and VNC connections
+  as of the current code; the earlier "audio off in v1" note is obsolete.

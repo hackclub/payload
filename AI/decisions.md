@@ -367,11 +367,17 @@ shipping all three together.
 
 **Decision:** v1 ships three VM types from day one:
 
-- `linux`: Debian 12 + XFCE + xrdp on RDP/3389 (template VMID 67001)
-- `windows`: Windows 11 Enterprise IoT LTSC on RDP/3389 (template VMID 67002)
-- `android`: BlissOS on VNC/5901 (template VMID 67003)
+- `linux`: Debian 12 + XFCE + xrdp on RDP/3389
+- `windows`: Windows 11 Enterprise IoT LTSC on RDP/3389
+- `android`: BlissOS on VNC/5901
 
-macOS remains deferred to v2.x (ADR-0007 risk still applies).
+> **VMID correction (ADR-0032):** the template VMIDs originally recorded here
+> (67001 / 67002 / 67003) are stale for linux/windows. The live templates are
+> `linux` → 67007, `windows` → 67006, `android` → 67003. The seed
+> (`src/config/vm-types.ts`) is the source of truth.
+
+macOS was deferred to v2.x at the time of this ADR; it was later enabled as a
+fourth v1 type — see ADR-0031 (ADR-0007 risk still applies).
 
 **Consequences:**
 - The picker on the dashboard renders three tiles, not one.
@@ -567,3 +573,113 @@ database.
 - The build stage uses placeholder env values to satisfy `src/env.ts`'s
   Zod schema during `next build`; real secrets come from
   `.env.production` at runtime only.
+
+---
+
+## ADR-0031 — macOS enabled as a fourth v1 VM type
+
+**Date:** 2026-07-04 | **Status:** Accepted, acknowledged risk
+
+ADR-0010/ADR-0024 deferred macOS to v2.x. A working macOS Sequoia (15) template
+(OpenCore, VNC on 5900, VMID 67005) became available, and the seed
+(`src/config/vm-types.ts`) now ships a `macos` row with `enabled: true`.
+
+**Decision:** macOS is a first-class, enabled v1 VM type, consistent with
+ADR-0007 (treat macOS as a normal VM type; EULA risk accepted). It is flagged
+`expensive: true` in the seed.
+
+**Consequences:**
+- The picker renders four tiles.
+- **Clipboard is unsupported on macOS** (ADR-0028): Apple's Screen Sharing VNC
+  dialect lacks `ClientCutText`. The session UI must say so until a compliant
+  RFB server or in-VM clipboard agent lands.
+- `expensive: true` is a seed-only field today (no DB column) and is intended to
+  drive a warm-pool size of 0 for macOS once the warm pool ships (ADR-0033).
+- Docs that described macOS as "deferred to v2.x" (overview, roadmap,
+  vm-templates, guacamole) were updated to match.
+
+---
+
+## ADR-0032 — `src/config/vm-types.ts` is the source of truth for template VMIDs
+
+**Date:** 2026-07-04 | **Status:** Accepted
+
+ADR-0024 and `vm-templates.md` recorded template VMIDs (linux 67001, windows
+67002) that no longer match the live Proxmox templates. The templates were
+rebuilt/renamed; the seed points at the current ones.
+
+**Decision:** The seed file is the single source of truth for `proxmox_template_vmid`.
+Docs must not hardcode VMIDs that can drift; where they mention one it is
+labelled "currently NNNNN" and defers to the seed. Live VMIDs as of this ADR:
+`linux` → 67007, `windows` → 67006, `android` → 67003, `macos` → 67005.
+
+**Consequences:**
+- One place to change a template mapping (the seed), applied via `pnpm db:seed`.
+- ADR-0024's inline VMIDs carry a correction note pointing here.
+
+---
+
+## ADR-0033 — Resource-aware warm VM pool (reconciler model)
+
+**Date:** 2026-07-04 | **Status:** Accepted
+
+Cold provisioning (clone → start → neighbor-table IP discovery, up to ~120 s +
+`bootDelayMs`) is the dominant latency a reviewer feels. The node (`nullskulls`,
+62 GB / 12 cores) sits mostly idle, and `cloneVm` already uses linked clones
+(thin, cheap on ZFS), so keeping a few pre-booted clones warm is cheap.
+
+**Decision:** Maintain a **warm pool** of pre-booted, ownerless VMs, driven by a
+single **reconciler** that continuously converges actual VM state toward a
+desired state, bounded by a RAM budget. The pool is the only speculative buffer;
+real user sessions always outrank it.
+
+Provisioning splits into two phases:
+- **warm phase** — clone + start + IP discovery + `bootDelayMs`, producing an
+  ownerless, *running* VM in state `warm`. No Guacamole footprint.
+- **bind phase** — create the one-shot Guacamole user/connection/token; runs at
+  claim time only, preserving the per-session security model (ADR-0002).
+
+Desired state, per type: `warm_pool_size` warm VMs **＋** one VM per waiting user
+(a `pending` owned session row). Each reconciler tick, in priority order:
+1. assign a warm VM to the oldest waiting user of that type;
+2. serve remaining waiting users — boot their type if it fits the budget, else
+   **sacrifice** warm VMs of other types to make room, then boot;
+3. refill pools toward `warm_pool_size` with leftover budget;
+4. recycle warm VMs older than `WARM_MAX_AGE`.
+
+A user request (inside the existing per-user advisory-lock transaction, after
+the cap check): if a warm VM of the type exists and no one is ahead in its
+queue, **claim** it (`SELECT ... FOR UPDATE SKIP LOCKED`) and enqueue bind —
+near-instant. Otherwise create a `pending` demand row and kick the reconciler.
+If the request cannot fit even after sacrificing every warm VM (i.e. assigned
+VMs alone exceed the budget), **reject with a reason** (hard error). The 6-hour
+TTL starts at **claim**, never at warm.
+
+**Parameters (decided):**
+- `PAYLOAD_VM_MEMORY_BUDGET_MB = 50000` (raise later if headroom allows).
+- `warm_pool_size`: linux 2, windows 2, android 1, macos 1 (full pool ≈ 36 GB).
+- Per-type `memory_mb`: linux/android 4096, windows/macos 8192.
+- "Server full" → hard error (assigned VMs expire, so the condition is transient).
+- `WARM_MAX_AGE` recycle (default ~2 h, keep under the DHCP lease renewal window);
+  bind re-verifies IP + health before handing a warm VM over, falling back to
+  cold on any miss.
+
+**Consequences:**
+- New `warm` state and nullable `user_id` / nullable `expires_at` on
+  `vm_sessions`; queue = FIFO of `pending` owned rows.
+- New `vm_types` columns: `warm_pool_size`, `memory_mb`, and promote `expensive`.
+- Per-user cap of 2 (ADR-0006) now counts pending demands, so a user cannot
+  flood the queue.
+- Single-writer reconciler under a global advisory lock owns all boot / destroy /
+  sacrifice / assign decisions and all budget accounting; user requests only
+  claim-existing or enqueue-demand. Event-kick on new demand + ~10–15 s periodic
+  safety tick. Depends on the single-container assumption (ADR-0016); a Redis
+  lock is needed before horizontal scale.
+- The pool is strictly a latency optimization: any miss, stale IP, unhealthy or
+  recycled warm VM degrades to cold provisioning, never to a broken session.
+- Warm VMs stay powered on; they leave the warm state by being claimed (→ 6 h
+  TTL), sacrificed under budget pressure, or recycled at `WARM_MAX_AGE`.
+  Templates must disable auto-update/sleep/lock so an idle warm VM does not
+  reboot or suspend its display server (already a `vm-templates.md` requirement).
+- A reconciler orphan sweep destroys any `payload-vm-*` on Proxmox with no live
+  session row (prevents pool bugs from leaking VMs, as happened pre-pool).

@@ -81,18 +81,25 @@ template.
 | column | type | notes |
 |--------|------|-------|
 | id | integer pk identity | auto-generated |
-| slug | text unique not null | `linux`, later `windows`, `android`, `macos` |
+| slug | text unique not null | `linux`, `windows`, `android`, `macos` |
 | display_name | text not null | "Debian XFCE", etc. |
 | proxmox_template_vmid | integer not null | source template VMID |
 | proxmox_node | text not null | Proxmox node hosting the template |
 | protocol | text not null | `vnc` or `rdp` |
-| default_port | integer not null | 3389 for RDP, 5900 for VNC |
+| default_port | integer not null | 3389 for RDP; 5901 (Android) / 5900 (macOS) for VNC |
 | enabled | boolean not null default false | hide from picker without deleting |
 | description | text | shown in picker UI |
 | username | text | template VM default username |
 | password | text | template VM default password |
 | icon_url | text | optional URL of an icon for the picker tile |
+| boot_delay_ms | integer not null default 0 | extra wait between IP discovery and Guacamole connect, for VMs (e.g. Android) whose display server starts only after the OS boots |
+| warm_pool_size | integer not null default 0 | warm-pool target: pre-booted ownerless VMs of this type the reconciler keeps ready (ADR-0033) |
+| memory_mb | integer not null default 4096 | configured RAM; used for warm-pool budget accounting against `PAYLOAD_VM_MEMORY_BUDGET_MB` |
+| expensive | boolean not null default false | costlier type (macOS); first candidate for pool sacrifice under budget pressure |
 | created_at / updated_at | timestamptz | |
+
+`warm_pool_size`, `memory_mb`, and `expensive` were promoted to real columns in
+migration `0007` (ADR-0033); `expensive` was previously a no-op seed-only field.
 
 The `username` and `password` columns hold the fixed template credential. These
 are the credentials used for Guacamole connections in v1 (per-session credential
@@ -111,7 +118,7 @@ The core resource: one row per ephemeral VM.
 | column | type | notes |
 |--------|------|-------|
 | id | integer pk identity | auto-generated |
-| user_id | text fk users.id not null | owner |
+| user_id | text fk users.id **nullable** | owner; null while a VM sits in the warm pool (ADR-0033) |
 | vm_type_id | integer fk vm_types.id not null | |
 | state | vm_session_state not null | enum below |
 | proxmox_vmid | integer | nil until cloned |
@@ -121,7 +128,8 @@ The core resource: one row per ephemeral VM.
 | guacamole_connection_id | text | from Guacamole REST |
 | guacamole_username | text | one-shot Guacamole user |
 | guacamole_password_ciphertext | text | encrypted one-shot password |
-| expires_at | timestamptz not null | `created_at + 6h` hard cap |
+| expires_at | timestamptz **nullable** | `claimed_at + 6h` hard cap; null while warm/queued (TTL starts at claim, ADR-0033) |
+| claimed_at | timestamptz | when a warm VM was claimed by a user; null while warm |
 | last_heartbeat_at | timestamptz | updated by browser heartbeat |
 | terminated_at | timestamptz | nil while alive |
 | termination_reason | text | `idle`, `ttl`, `user`, `error`, `admin`, `stuck` |
@@ -133,6 +141,7 @@ a string. `user_id` is `text` (UUID) matching the Auth.js users table.
 #### state enum
 
 ```
+warm         -> pre-booted, ownerless VM waiting in the pool (ADR-0033)
 pending      -> row created, before BullMQ worker starts provisioning
 provisioning -> clone in progress, polling for IP
 ready        -> IP known, Guacamole registered, reviewer may connect
@@ -162,6 +171,11 @@ Append-only audit log per session.
 | created_at | timestamptz not null | |
 
 ## Drizzle schema (actual implementation)
+
+> The block below is illustrative and can lag the code. `src/db/schema.ts` is
+> the source of truth — read it for the current columns (e.g. the ADR-0033
+> warm-pool changes: `warm` state, nullable `user_id`/`expires_at`, `claimed_at`,
+> and `vm_types.warm_pool_size` / `memory_mb` / `expensive`).
 
 ```ts
 import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
@@ -237,6 +251,10 @@ export const vmTypes = pgTable("vm_types", {
   username: text("username"),
   password: text("password"),
   iconUrl: text("icon_url"),
+  // Extra wait, in milliseconds, between IP discovery and the Guacamole
+  // connection being created. Used for VMs (e.g. Android) whose remote
+  // display server only starts after the OS finishes booting.
+  bootDelayMs: integer("boot_delay_ms").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

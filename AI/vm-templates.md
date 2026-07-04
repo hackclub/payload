@@ -1,7 +1,12 @@
 # VM Templates
 
-v1 ships **Linux, Windows, and Android** templates (ADR-0024). macOS is still
-deferred to v2.x.
+v1 ships **Linux, Windows, Android, and macOS** templates (ADR-0024 +
+ADR-0031). All four are seeded `enabled: true` in `src/config/vm-types.ts`.
+
+> **Template VMIDs are defined in the seed, not here.** The canonical source is
+> `src/config/vm-types.ts`. As of the current seed they are: `linux` → 67007,
+> `windows` → 67006, `android` → 67003, `macos` → 67005 (ADR-0032). Do not trust
+> any VMID written elsewhere in this doc over the seed.
 
 ## Common requirements
 
@@ -40,8 +45,9 @@ as a migration reference, but the preferred v1 template is XFCE.
 Proxmox template settings:
 
 - DHCP on the VM network.
-- Linked clones require compatible storage.
-- template VMID recorded in `vm_types` (currently `67001`).
+- Linked clones require compatible storage. `ProxmoxClient.cloneVm` defaults to
+  `full=0` (linked clone), so clones are thin and near-instant.
+- template VMID recorded in `vm_types` (currently `67007`).
 
 IP discovery:
 
@@ -67,7 +73,7 @@ Target: Windows 11 Enterprise IoT LTSC.
 - Auto-updates disabled to prevent reviewer-disrupting reboots.
 - qemu-guest-agent installed and enabled (does not affect IP discovery; we
   still use the Proxmox neighbor-table path).
-- Template VMID recorded in `vm_types` (currently `67002`).
+- Template VMID recorded in `vm_types` (currently `67006`).
 
 Build runbook: **TBD** — capture the install + sysprep + RDP-enable steps in a
 new `runbooks/build-windows-template.md` before next reviewer onboarding.
@@ -89,63 +95,40 @@ Target: BlissOS on Android 13 (Android-x86 derivative).
 Build runbook: **TBD** — capture the BlissOS install + VNC-on-boot steps in a
 new `runbooks/build-android-template.md`.
 
-## Future macOS template
+## macOS template (slug `macos`)
 
-- OpenCore on Proxmox.
-- Screen Sharing / VNC enabled.
-- LaunchDaemon handles injected password.
-- EULA risk is accepted by operators; code treats macOS as a normal VM type.
+Target: macOS Sequoia (15) on OpenCore. **Enabled in v1** (ADR-0031); marked
+`expensive: true` in the seed.
+
+- Screen Sharing / VNC on `5900`.
+- Local user `shipwrights` / `shipwrights` (matches `vm_types.username` /
+  `vm_types.password`).
+- Template VMID recorded in `vm_types` (currently `67005`).
+- **Clipboard is not supported** (ADR-0028): Apple's Screen Sharing speaks a
+  non-standard VNC dialect that does not implement RFB `ClientCutText`. The
+  session UI should say so until a third-party RFB server or an in-VM clipboard
+  agent (LaunchDaemon) lands.
+- EULA risk is accepted by operators (ADR-0007); code treats macOS as a normal
+  VM type.
+- Higher resource cost than the other types (8 GB RAM) — a reason to keep its
+  warm-pool size at 0 (see roadmap v1.x).
 
 ## Seed data shape
 
-Keep seed data in `src/config/vm-types.ts`, then load via
-`pnpm payload db:seed`. The actual current seed file ships all three v1 OSes:
+`src/config/vm-types.ts` is the **canonical source** for VM-type seed data;
+load it with `pnpm db:seed`. Read that file directly rather than trusting a
+copy here — a duplicated snippet is exactly what drifted before. As of now it
+ships four OSes (`linux`, `windows`, `android`, `macos`), each with:
 
-```ts
-import { env } from "../env";
-
-export const vmTypeSeeds = [
-  {
-    slug: "linux",
-    displayName: "Debian XFCE",
-    proxmoxTemplateVmid: 67001,
-    proxmoxNode: env.PROXMOX_DEFAULT_NODE,
-    protocol: "rdp",
-    defaultPort: 3389,
-    enabled: true,
-    description: "Debian running XFCE",
-    username: "shipwrights",
-    password: "shipwrights",
-    iconUrl: "https://cdn.hackclub.com/.../debian.png",
-  },
-  {
-    slug: "windows",
-    displayName: "Windows 11",
-    proxmoxTemplateVmid: 67002,
-    proxmoxNode: env.PROXMOX_DEFAULT_NODE,
-    protocol: "rdp",
-    defaultPort: 3389,
-    enabled: true,
-    description: "Windows 11 Enterprise IoT LTSC",
-    username: "shipwrights",
-    password: "shipwrights",
-    iconUrl: "https://cdn.hackclub.com/.../windows11.png",
-  },
-  {
-    slug: "android",
-    displayName: "Android",
-    proxmoxTemplateVmid: 67003,
-    proxmoxNode: env.PROXMOX_DEFAULT_NODE,
-    protocol: "vnc",
-    defaultPort: 5901,
-    enabled: true,
-    description: "Bliss OS on Android 13",
-    username: "shipwrights",
-    password: "",
-    iconUrl: "https://cdn.hackclub.com/.../android.png",
-  },
-] as const;
-```
+- `slug`, `displayName`, `description`, `iconUrl`
+- `proxmoxTemplateVmid` (67007 / 67006 / 67003 / 67005), `proxmoxNode`
+- `protocol` (`rdp` for linux/windows, `vnc` for android/macos), `defaultPort`
+- `enabled: true` for all four
+- `username` / `password` (fixed template credential; empty password for android)
+- `bootDelayMs` (Android is 6000; the rest are 1000)
+- `expensive` (**seed-only, not yet a DB column** — macOS is `true`; see
+  `domain-model.md`)
 
 The `iconUrl` value is also persisted in the `vm_types.icon_url` column so the
-dashboard renders correctly even when only DB rows are available.
+dashboard renders correctly even when only DB rows are available. `bootDelayMs`
+is persisted; `expensive` is not (Drizzle drops the unknown key at insert time).

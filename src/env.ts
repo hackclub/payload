@@ -64,6 +64,18 @@ const envSchema = z.object({
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   MAX_SESSIONS_PER_USER: z.coerce.number().int().positive().default(2),
   IP_DISCOVERY_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+
+  // Warm pool (ADR-0033)
+  // Total RAM (MB) the warm pool + all sessions may commit. Admission and
+  // pool decisions are made against this, summing vm_types.memory_mb.
+  PAYLOAD_VM_MEMORY_BUDGET_MB: z.coerce.number().int().positive().default(50_000),
+  // Recycle a warm VM once it has been idle in the pool this long (keep under
+  // the DHCP lease renewal window so its IP can't go stale).
+  WARM_MAX_AGE_MS: z.coerce.number().int().positive().default(2 * 60 * 60 * 1000),
+  // Cap on concurrent warm-VM boots per reconcile tick (avoid boot storms).
+  MAX_CONCURRENT_WARM_BOOTS: z.coerce.number().int().positive().default(2),
+  // How often the pool reconciler runs (it is also kicked on new demand).
+  RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
 });
 
 const parsed = envSchema.safeParse(process.env);

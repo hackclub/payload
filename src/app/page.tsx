@@ -224,7 +224,7 @@ export default async function Dashboard() {
                           <circle cx="12" cy="12" r="10"></circle>
                           <polyline points="12 6 12 12 16 14"></polyline>
                         </svg>
-                        <span>Expires in {formatTimeRemaining(s.expiresAt)}</span>
+                        <span>{s.expiresAt ? `Expires in ${formatTimeRemaining(s.expiresAt)}` : "Waiting for a slot…"}</span>
                       </div>
                     </div>
                   </div>

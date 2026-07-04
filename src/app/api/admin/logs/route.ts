@@ -38,7 +38,8 @@ export async function GET(request: Request) {
 
   const sessionMap = new Map(relatedSessions.map((s) => [s.id, s]));
 
-  const userIds = [...new Set(relatedSessions.map((s) => s.userId))];
+  // Warm-pool sessions are ownerless (null userId); drop those before lookup.
+  const userIds = [...new Set(relatedSessions.map((s) => s.userId).filter((id): id is string => id !== null))];
   const sessionUsers = userIds.length > 0
     ? await db.query.users.findMany({ where: inArray(users.id, userIds) })
     : [];
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
 
   const enriched = events.map((e) => {
     const session = sessionMap.get(e.vmSessionId);
-    const user = session ? userMap.get(session.userId) : undefined;
+    const user = session?.userId ? userMap.get(session.userId) : undefined;
     const slackId = user?.slackId ?? null;
     const cachet = slackId ? cachetProfiles.get(slackId) : undefined;
 

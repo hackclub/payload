@@ -39,6 +39,9 @@ async function main() {
           password: vmType.password,
           iconUrl: vmType.iconUrl,
           bootDelayMs: vmType.bootDelayMs,
+          warmPoolSize: vmType.warmPoolSize,
+          memoryMb: vmType.memoryMb,
+          expensive: vmType.expensive,
         },
       });
   }

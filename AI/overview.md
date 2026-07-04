@@ -27,10 +27,14 @@ admin UI.
 ## What's in v1
 
 - Hack Club OIDC login + Slack-ID allowlist gate
-- Spawn a **Linux**, **Windows**, or **Android** desktop VM (ADR-0024):
+- Spawn a **Linux**, **Windows**, **Android**, or **macOS** desktop VM
+  (ADR-0024 + ADR-0031):
   - Linux: Debian 12 + XFCE over RDP/xrdp
   - Windows: Windows 11 Enterprise IoT LTSC over RDP
   - Android: BlissOS over VNC
+  - macOS: macOS Sequoia (15) over VNC — enabled in the seed (ADR-0031);
+    clipboard is **not** supported (ADR-0028) and the EULA risk is accepted
+    (ADR-0007)
 - Clone a Proxmox template, boot, register with Guacamole
 - Embedded Guacamole iframe with auto-login token
 - Clipboard sync (in + out of VM)
@@ -41,9 +45,6 @@ admin UI.
 
 ## What's NOT in v1
 
-- **macOS VM type** — deferred to v2.x. Schema and picker stay polymorphic so
-  adding it later is a seed + template change. EULA risk is acknowledged in
-  ADR-0007.
 - File transfer in/out of the VM — nice-to-have, ship later
 - Session recording — planned but not v1
 - Custom Guacamole client (replacing iframe) — keep door open, build later
