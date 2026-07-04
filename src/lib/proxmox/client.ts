@@ -91,11 +91,19 @@ export class ProxmoxClient {
     );
   }
 
-  /** Rename a VM (used to rebrand a warm-pool clone to its claimant, ADR-0033). */
-  async setVmName(node: string, vmid: number, name: string): Promise<void> {
+  /**
+   * Update VM config (POST /config). Used to rebrand a warm-pool clone to its
+   * claimant (`name`) and to adjust its CPU weight (`cpuunits`) — ADR-0033.
+   * `cpuunits` applies live to a running VM's cgroup.
+   */
+  async updateVmConfig(
+    node: string,
+    vmid: number,
+    params: Record<string, string | number>,
+  ): Promise<void> {
     await this.request<unknown>(`/nodes/${node}/qemu/${vmid}/config`, {
       method: "POST",
-      body: { name },
+      body: params,
       retry: false,
     });
   }

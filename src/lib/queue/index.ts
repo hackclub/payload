@@ -15,6 +15,8 @@ export const PAYLOAD_VM_MEMORY_BUDGET_MB = env.PAYLOAD_VM_MEMORY_BUDGET_MB;
 export const WARM_MAX_AGE_MS = env.WARM_MAX_AGE_MS;
 export const MAX_CONCURRENT_WARM_BOOTS = env.MAX_CONCURRENT_WARM_BOOTS;
 export const RECONCILE_INTERVAL_MS = env.RECONCILE_INTERVAL_MS;
+export const WARM_CPU_UNITS = env.WARM_CPU_UNITS;
+export const ACTIVE_CPU_UNITS = env.ACTIVE_CPU_UNITS;
 
 export const vmQueue = new Queue("vm", { connection: redis });
 

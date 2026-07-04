@@ -76,6 +76,12 @@ const envSchema = z.object({
   MAX_CONCURRENT_WARM_BOOTS: z.coerce.number().int().positive().default(2),
   // How often the pool reconciler runs (it is also kicked on new demand).
   RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
+  // Proxmox CPU weight (cgroup cpuunits, range 1-10000, default 100). Warm VMs
+  // run at a low weight so an idle Windows pool VM's background churn can't
+  // steal CPU from the VM a reviewer is actually using; restored to normal at
+  // claim. Only matters under contention — warm VMs still use idle CPU freely.
+  WARM_CPU_UNITS: z.coerce.number().int().positive().default(8),
+  ACTIVE_CPU_UNITS: z.coerce.number().int().positive().default(100),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -6,7 +6,12 @@ import { discoverIpFromProxmoxNeighborTable } from "@/lib/proxmox/ip-discovery";
 import { createGuacamoleClient, getGuacamoleConfig } from "@/lib/guacamole/config";
 import { encrypt } from "@/lib/crypto";
 import { publish } from "@/lib/sse";
-import { IP_DISCOVERY_TIMEOUT_MS, SESSION_LIFETIME_MS } from "@/lib/queue";
+import {
+  IP_DISCOVERY_TIMEOUT_MS,
+  SESSION_LIFETIME_MS,
+  WARM_CPU_UNITS,
+  ACTIVE_CPU_UNITS,
+} from "@/lib/queue";
 import { ownedVmName, warmVmName } from "@/lib/vm-naming";
 import { randomBytes } from "node:crypto";
 
@@ -161,6 +166,15 @@ async function runWarmPhase(sessionId: number) {
   const startUpid = await proxmox.startVm(vmType.proxmoxNode, newVmid);
   await proxmox.waitForTask({ node: vmType.proxmoxNode, upid: startUpid });
 
+  // Run warm VMs at low CPU weight so an idle pool VM's background churn (esp.
+  // Windows) can't steal CPU from a VM a reviewer is actively using. Restored
+  // to normal at claim (see runBindPhase). Best-effort (ADR-0033).
+  try {
+    await proxmox.updateVmConfig(vmType.proxmoxNode, newVmid, { cpuunits: WARM_CPU_UNITS });
+  } catch {
+    // not worth failing a warm boot over
+  }
+
   const vmIp = await discoverIpFromProxmoxNeighborTable({
     macAddress,
     config: proxmoxConfig,
@@ -234,17 +248,20 @@ async function runBindPhase(sessionId: number) {
     throw new WarmVmUnhealthyError(`VM ${vmid} has no recorded IP to bind`);
   }
 
-  // --- Rename the clone to reflect its owner (payload-<user>-<type>).
-  // Cosmetic and independent of binding, so run it concurrently with the
-  // Guacamole work instead of blocking on it. ---
-  const renamePromise = (async () => {
-    if (!session.userId) return;
+  // --- Restore normal CPU weight (undo the warm de-prioritization) and rename
+  // the clone to its owner (payload-<user>-<type>), in a single Proxmox config
+  // call. Independent of binding, so run it concurrently with the Guacamole
+  // work instead of blocking on it. ---
+  const finalizeVmPromise = (async () => {
     try {
-      const owner = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
-      const identity = owner?.name ?? owner?.slackId ?? "user";
-      await proxmox.setVmName(node, vmid, ownedVmName(identity, vmType.slug));
+      const params: Record<string, string | number> = { cpuunits: ACTIVE_CPU_UNITS };
+      if (session.userId) {
+        const owner = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
+        params.name = ownedVmName(owner?.name ?? owner?.slackId ?? "user", vmType.slug);
+      }
+      await proxmox.updateVmConfig(node, vmid, params);
     } catch {
-      // Cosmetic only — never fail a bind because a rename didn't take.
+      // Best-effort — never fail a bind because a config tweak didn't take.
     }
   })();
 
@@ -331,8 +348,8 @@ async function runBindPhase(sessionId: number) {
     });
     publish({ type: "ready", state: "ready", sessionId, data: { ip: vmIp } });
 
-    // Let the (concurrent) cosmetic rename finish; it never rejects.
-    await renamePromise;
+    // Let the (concurrent) rename + CPU-weight restore finish; it never rejects.
+    await finalizeVmPromise;
   } catch (error) {
     // Clean up any Guacamole resources this bind created before rethrowing.
     if (guacamoleConnectionId) {

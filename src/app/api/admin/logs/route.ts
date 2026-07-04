@@ -56,6 +56,8 @@ export async function GET(request: Request) {
     const user = session?.userId ? userMap.get(session.userId) : undefined;
     const slackId = user?.slackId ?? null;
     const cachet = slackId ? cachetProfiles.get(slackId) : undefined;
+    // Ownerless (warm-pool) sessions are owned by the system — show as "Payload".
+    const isPool = !!session && session.userId === null;
 
     return {
       id: e.id,
@@ -65,8 +67,8 @@ export async function GET(request: Request) {
       createdAt: e.createdAt,
       sessionState: session?.state ?? null,
       vmType: session?.vmType?.displayName ?? null,
-      userName: user?.name ?? cachet?.displayName ?? null,
-      userImage: user?.image ?? cachet?.imageUrl ?? (slackId ? cachetAvatarUrl(slackId) : null),
+      userName: isPool ? "Payload" : (user?.name ?? cachet?.displayName ?? null),
+      userImage: isPool ? "/payload-avatar.svg" : (user?.image ?? cachet?.imageUrl ?? (slackId ? cachetAvatarUrl(slackId) : null)),
     };
   });
 
