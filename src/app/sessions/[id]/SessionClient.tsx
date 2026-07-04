@@ -119,6 +119,45 @@ export default function SessionClient({
     }
   }, [focusIframe]);
 
+  // Disable navigator.clipboard.readText() inside the (same-origin) iframe
+  // on browsers that lack a persistent clipboard-read permission.
+  //
+  // Guacamole 1.6 calls readText() from its own window "focus" handler to
+  // sync the host clipboard into the VM. Chromium grants clipboard-read
+  // once via the Permissions API, so those reads are silent. Firefox has no
+  // such permission — EVERY readText() pops the native per-call "Paste"
+  // authorization menu at the cursor. So any focus bounce into the iframe
+  // (clicking back into it, or our own focusIframe() calls) popped that
+  // menu and swallowed the user's next click.
+  //
+  // The iframe never needs to read the host clipboard itself: host→VM paste
+  // is driven from the parent by sendClipboardToVm(), which reads the
+  // clipboard up here (one user gesture on the paste button) and dispatches
+  // a synthetic paste event into the iframe. VM→host copy uses
+  // clipboard.writeText(), which is untouched.
+  //
+  // Feature detection rather than UA sniffing: permissions.query({name:
+  // "clipboard-read"}) resolves only on engines with a real clipboard
+  // permission model (Chromium); Firefox and Safari reject, and there the
+  // patch applies.
+  const disableIframeClipboardRead = useCallback(async () => {
+    try {
+      await navigator.permissions.query({ name: "clipboard-read" as PermissionName });
+      return; // permission model exists — Guacamole's focus-sync reads are silent
+    } catch {
+      // no clipboard-read permission (Firefox/Safari) — fall through and patch
+    }
+    try {
+      const clip = iframeRef.current?.contentWindow?.navigator.clipboard;
+      if (clip) {
+        clip.readText = () =>
+          Promise.reject(new DOMException("Clipboard read disabled by host page", "NotAllowedError"));
+      }
+    } catch {
+      // couldn't reach into the iframe — leave Guacamole's default behavior
+    }
+  }, []);
+
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -201,15 +240,34 @@ export default function SessionClient({
   }, [state, sessionId]);
 
   // Re-focus the iframe whenever the window/tab regains focus or visibility.
+  //
+  // Guard: when the iframe holds focus and the user clicks parent UI (the
+  // floating island), focus crosses the frame boundary back to the parent
+  // and — in Firefox especially — fires the same window "focus" event as a
+  // genuine alt-tab back. Refocusing the iframe at that instant yanks focus
+  // away mid-click and triggers Guacamole's focus-time clipboard sync, so
+  // the island click is lost. A real tab re-activation has no preceding
+  // pointerdown on our document (the click-induced bounce always does,
+  // since focus moves as part of mousedown's default action), so ignore
+  // "focus" events that arrive right after one.
   useEffect(() => {
     if (!iframeUrl) return;
-    const onWindowFocus = () => focusIframe();
+    let lastParentPointerDown = 0;
+    const onPointerDown = () => {
+      lastParentPointerDown = performance.now();
+    };
+    const onWindowFocus = () => {
+      if (performance.now() - lastParentPointerDown < 250) return;
+      focusIframe();
+    };
     const onVisibility = () => {
       if (document.visibilityState === "visible") focusIframe();
     };
+    document.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("focus", onWindowFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("focus", onWindowFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -522,7 +580,12 @@ export default function SessionClient({
             className="w-full h-full border-0"
             allow="clipboard-read; clipboard-write; fullscreen"
             title="Remote Desktop"
-            onLoad={focusIframe}
+            onLoad={async () => {
+              // Patch before the first focus so Guacamole's focus handler
+              // never runs an unneutered clipboard read.
+              await disableIframeClipboardRead();
+              focusIframe();
+            }}
           />
         ) : isPending ? (
           <div className="flex flex-col items-center gap-5 animate-in fade-in duration-700">
