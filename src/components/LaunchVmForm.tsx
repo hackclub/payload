@@ -13,6 +13,7 @@ interface LaunchVmFormProps {
 export default function LaunchVmForm({ vmTypeSlug, isExpensive, vmDisplayName, children }: LaunchVmFormProps) {
   const [showWarning, setShowWarning] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleClick = (e: React.MouseEvent) => {
     if (isExpensive && !showWarning) {
@@ -26,10 +27,17 @@ export default function LaunchVmForm({ vmTypeSlug, isExpensive, vmDisplayName, c
 
   const handleLaunch = async () => {
     setIsPending(true);
+    setError(null);
     try {
-      await launchVm(vmTypeSlug);
+      const result = await launchVm(vmTypeSlug);
+      // A successful launch redirects; only a returned object means failure.
+      if (result?.error) {
+        setError(result.error);
+        setIsPending(false);
+      }
     } catch (error) {
       console.error("Failed to launch VM:", error);
+      setError("Something went wrong launching the VM. Please try again.");
       setIsPending(false);
     }
   };
@@ -53,6 +61,18 @@ export default function LaunchVmForm({ vmTypeSlug, isExpensive, vmDisplayName, c
         {children}
       </button>
 
+      {error && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)] bg-hc-dark border border-hc-red/40 rounded-hc shadow-2xl p-4 flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <svg className="w-5 h-5 text-hc-red shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <p className="text-hc-smoke text-sm leading-relaxed flex-1">{error}</p>
+          <button onClick={() => setError(null)} className="text-hc-muted hover:text-hc-smoke text-sm font-bold shrink-0">✕</button>
+        </div>
+      )}
+
       {showWarning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 m-0">
           <div className="bg-hc-dark border border-hc-orange/50 rounded-hc shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
@@ -68,7 +88,7 @@ export default function LaunchVmForm({ vmTypeSlug, isExpensive, vmDisplayName, c
             </div>
 
             <p className="text-hc-smoke leading-relaxed">
-              <strong>{vmDisplayName}</strong> is expensive to run and will decrease the available resources for other users. Make sure to terminate it as soon as you're done using it!
+              <strong>{vmDisplayName}</strong> is expensive to run and will decrease the available resources for other users. Make sure to terminate it as soon as you&apos;re done using it!
             </p>
 
             <div className="flex gap-3 pt-2">

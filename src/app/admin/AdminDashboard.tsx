@@ -18,13 +18,13 @@ type SessionInfo = {
   state: string;
   vmType: string | null;
   vmTypeDisplayName: string | null;
-  userId: string;
+  userId: string | null;
   userName: string | null;
   userImage: string | null;
   userSlackId: string | null;
   userIsAdmin: boolean;
   proxmoxVmid: number | null;
-  expiresAt: string;
+  expiresAt: string | null;
   lastHeartbeatAt: string | null;
   terminatedAt: string | null;
   terminationReason: string | null;
@@ -68,6 +68,20 @@ type SystemInfo = {
     maxMemory: string;
     connectedClients: number | null;
   } | { error: string };
+  pool: {
+    budgetMb: number;
+    committedMb: number;
+    types: {
+      slug: string;
+      displayName: string;
+      target: number;
+      warm: number;
+      warming: number;
+      active: number;
+      waiting: number;
+      memoryMb: number;
+    }[];
+  } | { error: string };
 };
 
 type LogEntry = {
@@ -90,6 +104,7 @@ type AdminEntry = {
 };
 
 const STATE_COLORS: Record<string, string> = {
+  warm: "text-hc-cyan",
   pending: "text-hc-yellow",
   provisioning: "text-hc-yellow",
   ready: "text-hc-green",
@@ -100,6 +115,7 @@ const STATE_COLORS: Record<string, string> = {
 };
 
 const STATE_BG: Record<string, string> = {
+  warm: "bg-hc-cyan/10 border-hc-cyan/20",
   pending: "bg-hc-yellow/10 border-hc-yellow/20",
   provisioning: "bg-hc-yellow/10 border-hc-yellow/20",
   ready: "bg-hc-green/10 border-hc-green/20",
@@ -440,7 +456,7 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-hc-muted text-xs">
-                          {["pending", "provisioning", "ready", "active"].includes(s.state)
+                          {s.expiresAt && ["provisioning", "ready", "active"].includes(s.state)
                             ? formatTimeRemaining(s.expiresAt)
                             : "-"}
                         </td>
@@ -469,7 +485,9 @@ export default function AdminDashboard() {
       )}
 
       {!loading && activeTab === "system" && system && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-6">
+          <PoolCard pool={system.pool} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <StatCard title="App Node" items={[
             { label: "Hostname", value: system.node.hostname },
             { label: "Uptime", value: system.node.uptime },
@@ -511,6 +529,7 @@ export default function AdminDashboard() {
               { label: "Connected Clients", value: String(system.redis.connectedClients ?? "N/A") },
             ]} />
           )}
+          </div>
         </div>
       )}
 
@@ -630,6 +649,74 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PoolCard({ pool }: { pool: SystemInfo["pool"] }) {
+  if ("error" in pool) {
+    return <StatCard title="Warm Pool" items={[{ label: "Error", value: pool.error }]} />;
+  }
+
+  const budgetPercent = pool.budgetMb > 0
+    ? Math.min(100, Math.round((pool.committedMb / pool.budgetMb) * 100))
+    : 0;
+  const budgetHot = budgetPercent >= 85;
+
+  return (
+    <div className="bg-hc-dark rounded-hc border border-hc-darkless p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-hc-smoke flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-hc-cyan"></span>
+          Warm Pool
+        </h3>
+        <span className="text-hc-muted text-sm font-mono">
+          {(pool.committedMb / 1024).toFixed(1)} / {(pool.budgetMb / 1024).toFixed(1)} GB committed
+        </span>
+      </div>
+
+      {/* RAM budget bar */}
+      <div className="h-2 w-full rounded-full bg-hc-darker overflow-hidden mb-5">
+        <div
+          className={`h-full rounded-full ${budgetHot ? "bg-hc-red" : "bg-hc-green"}`}
+          style={{ width: `${budgetPercent}%` }}
+        ></div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-hc-darkless text-hc-muted">
+              <th className="text-left font-bold py-2 pr-4">VM Type</th>
+              <th className="text-center font-bold py-2 px-2" title="Ready to claim">Warm</th>
+              <th className="text-center font-bold py-2 px-2" title="Target pool size">Target</th>
+              <th className="text-center font-bold py-2 px-2" title="Booting into pool">Warming</th>
+              <th className="text-center font-bold py-2 px-2" title="In use by users">In use</th>
+              <th className="text-center font-bold py-2 px-2" title="Users waiting for a VM">Waiting</th>
+              <th className="text-right font-bold py-2 pl-2">RAM</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pool.types.map((t) => (
+              <tr key={t.slug} className="border-b border-hc-darkless/50">
+                <td className="py-2 pr-4 text-hc-smoke font-medium">{t.displayName}</td>
+                <td className="py-2 px-2 text-center font-mono">
+                  <span className={t.warm >= t.target ? "text-hc-green" : "text-hc-yellow"}>{t.warm}</span>
+                </td>
+                <td className="py-2 px-2 text-center font-mono text-hc-muted">{t.target}</td>
+                <td className="py-2 px-2 text-center font-mono text-hc-muted">{t.warming || "-"}</td>
+                <td className="py-2 px-2 text-center font-mono text-hc-smoke">{t.active || "-"}</td>
+                <td className="py-2 px-2 text-center font-mono">
+                  <span className={t.waiting > 0 ? "text-hc-orange font-bold" : "text-hc-muted"}>
+                    {t.waiting || "-"}
+                  </span>
+                </td>
+                <td className="py-2 pl-2 text-right font-mono text-hc-muted">{(t.memoryMb / 1024).toFixed(0)}G</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

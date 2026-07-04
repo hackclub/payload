@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAllowlistedUser } from "@/lib/auth-guard";
-import { createUserSession } from "@/lib/sessions";
+import { createUserSession, UserCapError, CapacityError } from "@/lib/sessions";
 
 export async function POST(request: Request) {
   const authResult = await getAllowlistedUser();
@@ -19,7 +19,8 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    const status = message.includes("active sessions") ? 409 : 400;
+    const status =
+      error instanceof UserCapError ? 409 : error instanceof CapacityError ? 503 : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }

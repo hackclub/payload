@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
 import { getAdminUser } from "@/lib/admin-guard";
 import { createProxmoxClient } from "@/lib/proxmox/config";
-import { vmQueue } from "@/lib/queue";
+import { vmQueue, PAYLOAD_VM_MEMORY_BUDGET_MB } from "@/lib/queue";
 import { redis } from "@/lib/redis";
+import { db } from "@/db";
+import { vmSessions, vmTypes } from "@/db/schema";
+import { inArray } from "drizzle-orm";
 import os from "node:os";
 
 export async function GET() {
   const admin = await getAdminUser();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [proxmoxStats, queueCounts, redisInfo] = await Promise.allSettled([
+  const [proxmoxStats, queueCounts, redisInfo, poolStats] = await Promise.allSettled([
     getProxmoxNodeStats(),
     getQueueCounts(),
     getRedisInfo(),
+    getPoolStats(),
   ]);
 
   return NextResponse.json({
@@ -30,7 +34,55 @@ export async function GET() {
     proxmox: proxmoxStats.status === "fulfilled" ? proxmoxStats.value : { error: proxmoxStats.reason?.message ?? "Failed to fetch" },
     queues: queueCounts.status === "fulfilled" ? queueCounts.value : { error: queueCounts.reason?.message ?? "Failed to fetch" },
     redis: redisInfo.status === "fulfilled" ? redisInfo.value : { error: redisInfo.reason?.message ?? "Failed to fetch" },
+    pool: poolStats.status === "fulfilled" ? poolStats.value : { error: poolStats.reason?.message ?? "Failed to fetch" },
   });
+}
+
+// Warm-pool status per VM type + RAM budget usage (ADR-0033).
+async function getPoolStats() {
+  const types = await db.select().from(vmTypes);
+  const live = await db
+    .select({
+      state: vmSessions.state,
+      userId: vmSessions.userId,
+      vmTypeId: vmSessions.vmTypeId,
+    })
+    .from(vmSessions)
+    .where(inArray(vmSessions.state, ["warm", "pending", "provisioning", "ready", "active"]));
+
+  const memById = new Map(types.map((t) => [t.id, t.memoryMb]));
+
+  const byType = types
+    .filter((t) => t.enabled)
+    .map((t) => {
+      const rows = live.filter((r) => r.vmTypeId === t.id);
+      return {
+        slug: t.slug,
+        displayName: t.displayName,
+        target: t.warmPoolSize,
+        // Ready-to-claim warm VMs.
+        warm: rows.filter((r) => r.state === "warm").length,
+        // Ownerless VMs still booting into the pool.
+        warming: rows.filter(
+          (r) => r.userId === null && (r.state === "pending" || r.state === "provisioning"),
+        ).length,
+        // In use by a user (owned + has/booting a VM).
+        active: rows.filter(
+          (r) =>
+            r.userId !== null &&
+            (r.state === "provisioning" || r.state === "ready" || r.state === "active"),
+        ).length,
+        // Queued demands waiting for a VM.
+        waiting: rows.filter((r) => r.userId !== null && r.state === "pending").length,
+        memoryMb: t.memoryMb,
+      };
+    });
+
+  const committedMb = live
+    .filter((r) => ["warm", "provisioning", "ready", "active"].includes(r.state))
+    .reduce((sum, r) => sum + (memById.get(r.vmTypeId) ?? 0), 0);
+
+  return { budgetMb: PAYLOAD_VM_MEMORY_BUDGET_MB, committedMb, types: byType };
 }
 
 async function getProxmoxNodeStats() {

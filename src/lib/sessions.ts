@@ -1,8 +1,23 @@
 import { db } from "@/db";
 import { vmSessions, vmSessionEvents, vmTypes } from "@/db/schema";
-import { eq, inArray, and, sql } from "drizzle-orm";
-import { enqueueProvisionVm, MAX_SESSIONS_PER_USER, SESSION_LIFETIME_MS } from "@/lib/queue";
+import { eq, inArray, and, sql, isNotNull } from "drizzle-orm";
+import {
+  enqueueBindVm,
+  enqueueReconcilePool,
+  MAX_SESSIONS_PER_USER,
+  PAYLOAD_VM_MEMORY_BUDGET_MB,
+  SESSION_LIFETIME_MS,
+} from "@/lib/queue";
 import { createHash } from "node:crypto";
+
+/** The user already holds the maximum number of concurrent sessions. */
+export class UserCapError extends Error {}
+/** The server has no room for another VM even after sacrificing the warm pool. */
+export class CapacityError extends Error {}
+
+// States that hold (or have promised) RAM and are NOT sacrificeable warm VMs.
+// Used for both the per-user cap and the global capacity check.
+const COMMITTED_STATES = ["pending", "provisioning", "ready", "active"] as const;
 
 export async function createUserSession(userId: string, vmTypeSlug: string) {
   const vmType = await db.query.vmTypes.findFirst({
@@ -15,46 +30,111 @@ export async function createUserSession(userId: string, vmTypeSlug: string) {
 
   const lockKey = advisoryLockKey(userId);
 
-  const inserted = await db.transaction(async (tx) => {
-    // pg_advisory_xact_lock requires being inside a transaction; the lock
-    // is auto-released when the transaction commits/rolls back.
+  const result = await db.transaction(async (tx) => {
+    // pg_advisory_xact_lock requires being inside a transaction; the lock is
+    // auto-released when the transaction commits/rolls back.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
 
-    const activeCount = await tx.query.vmSessions.findMany({
-      where: and(
-        eq(vmSessions.userId, userId),
-        inArray(vmSessions.state, ["pending", "provisioning", "ready", "active"]),
-      ),
-    });
+    // Per-user cap. Counts the user's queued demands too (pending + owned), so
+    // a user cannot flood the queue past their cap (ADR-0006 + ADR-0033).
+    const owned = await tx
+      .select({ id: vmSessions.id })
+      .from(vmSessions)
+      .where(and(eq(vmSessions.userId, userId), inArray(vmSessions.state, [...COMMITTED_STATES])));
 
-    if (activeCount.length >= MAX_SESSIONS_PER_USER) {
-      throw new Error(`You already have ${MAX_SESSIONS_PER_USER} active sessions`);
+    if (owned.length >= MAX_SESSIONS_PER_USER) {
+      throw new UserCapError(`You already have ${MAX_SESSIONS_PER_USER} active sessions`);
     }
 
-    const expiresAt = new Date(Date.now() + SESSION_LIFETIME_MS);
+    // Fairness: if someone is already waiting for this type, don't let a fresh
+    // request jump ahead and claim a warm VM — join the queue instead.
+    const queuedAhead = await tx
+      .select({ id: vmSessions.id })
+      .from(vmSessions)
+      .where(
+        and(
+          eq(vmSessions.vmTypeId, vmType.id),
+          eq(vmSessions.state, "pending"),
+          isNotNull(vmSessions.userId),
+        ),
+      );
+
+    if (queuedAhead.length === 0) {
+      // Try to claim a warm VM atomically. SKIP LOCKED prevents two concurrent
+      // claims from grabbing the same row.
+      const claim = (await tx.execute(sql`
+        SELECT id FROM vm_sessions
+         WHERE state = 'warm' AND vm_type_id = ${vmType.id}
+         ORDER BY created_at ASC
+         LIMIT 1
+         FOR UPDATE SKIP LOCKED
+      `)) as unknown as Array<{ id: number }>;
+
+      const warmId = claim[0]?.id;
+      if (warmId !== undefined) {
+        const now = new Date();
+        const [row] = await tx
+          .update(vmSessions)
+          .set({
+            userId,
+            state: "provisioning",
+            claimedAt: now,
+            expiresAt: new Date(now.getTime() + SESSION_LIFETIME_MS),
+            updatedAt: now,
+          })
+          .where(eq(vmSessions.id, warmId))
+          .returning();
+
+        await tx.insert(vmSessionEvents).values({
+          vmSessionId: row.id,
+          kind: "claimed_warm",
+          payload: { vmTypeSlug },
+        });
+
+        return { row, claimed: true as const };
+      }
+    }
+
+    // No warm VM available (or we must queue): create a demand row. First a
+    // capacity check — reject only if the request cannot fit even after
+    // sacrificing every warm VM, i.e. non-warm commitments already fill the
+    // budget (ADR-0033, hard-error policy).
+    const committed = await tx
+      .select({ memoryMb: vmTypes.memoryMb })
+      .from(vmSessions)
+      .innerJoin(vmTypes, eq(vmSessions.vmTypeId, vmTypes.id))
+      .where(inArray(vmSessions.state, [...COMMITTED_STATES]));
+
+    const committedMb = committed.reduce((sum, r) => sum + r.memoryMb, 0);
+    if (committedMb + vmType.memoryMb > PAYLOAD_VM_MEMORY_BUDGET_MB) {
+      throw new CapacityError(
+        "All VMs are currently in use and there is no free capacity. Please try again in a few minutes.",
+      );
+    }
 
     const [row] = await tx
       .insert(vmSessions)
-      .values({
-        userId,
-        vmTypeId: vmType.id,
-        expiresAt,
-      })
+      .values({ userId, vmTypeId: vmType.id, state: "pending", expiresAt: null })
       .returning();
 
     await tx.insert(vmSessionEvents).values({
       vmSessionId: row.id,
       kind: "created",
-      payload: { vmTypeSlug },
+      payload: { vmTypeSlug, queued: true },
     });
 
-    return row;
+    return { row, claimed: false as const };
   });
 
-  // Enqueue outside the transaction so a Redis hiccup cannot roll back the row.
-  await enqueueProvisionVm({ sessionId: inserted.id });
+  // Side effects happen after commit so a Redis hiccup can't roll back the row.
+  if (result.claimed) {
+    await enqueueBindVm({ sessionId: result.row.id });
+  } else {
+    // The reconciler owns all booting decisions; kick it to serve this demand.
+    await enqueueReconcilePool();
+  }
 
-  return inserted;
+  return result.row;
 }
 
 function advisoryLockKey(userId: string): bigint {

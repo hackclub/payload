@@ -91,6 +91,31 @@ export class ProxmoxClient {
     );
   }
 
+  /** Rename a VM (used to rebrand a warm-pool clone to its claimant, ADR-0033). */
+  async setVmName(node: string, vmid: number, name: string): Promise<void> {
+    await this.request<unknown>(`/nodes/${node}/qemu/${vmid}/config`, {
+      method: "POST",
+      body: { name },
+      retry: false,
+    });
+  }
+
+  /** List all QEMU VMs on a node (used by the orphan sweep). */
+  async listVms(node: string): Promise<
+    Array<{ vmid: number; name?: string; status?: string; template?: number }>
+  > {
+    return this.request<
+      Array<{ vmid: number; name?: string; status?: string; template?: number }>
+    >(`/nodes/${node}/qemu`);
+  }
+
+  /** Current run status of a VM; used for warm-VM health checks before bind. */
+  async getVmStatus(node: string, vmid: number): Promise<{ status: string }> {
+    return this.request<{ status: string }>(
+      `/nodes/${node}/qemu/${vmid}/status/current`,
+    );
+  }
+
   async getTaskStatus(node: string, upid: string): Promise<ProxmoxTaskStatus> {
     return this.request<ProxmoxTaskStatus>(
       `/nodes/${node}/tasks/${encodeURIComponent(upid)}/status`,
