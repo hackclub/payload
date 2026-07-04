@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { randomBytes } from "node:crypto";
 import { db } from "../src/db";
-import { vmTypes } from "../src/db/schema";
+import { vmTypes, vmSessions } from "../src/db/schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { createProxmoxClient, getProxmoxConfig } from "../src/lib/proxmox/config";
 import { discoverIpFromProxmoxNeighborTable } from "../src/lib/proxmox/ip-discovery";
 import { vmTypeSeeds } from "../src/config/vm-types";
@@ -10,6 +11,7 @@ import {
   getGuacamoleConfig,
 } from "../src/lib/guacamole/config";
 import type { GuacamoleProtocol } from "../src/lib/guacamole/client";
+import type { ProxmoxClient } from "../src/lib/proxmox/client";
 
 const command = process.argv[2];
 
@@ -29,10 +31,110 @@ async function main() {
     return;
   }
 
+  if (command === "pool:destroy") {
+    await poolDestroy();
+    return;
+  }
+
   console.error(
-    "Usage: pnpm payload <proxmox:test-clone|seed:vm-types|guac:test-connection>",
+    "Usage: pnpm payload <proxmox:test-clone|seed:vm-types|guac:test-connection|pool:destroy [--zero]>",
   );
   process.exit(1);
+}
+
+/**
+ * Stop and destroy every warm-pool VM: ownerless sessions in warm/warming
+ * states (plus their Proxmox VMs and any Guacamole leftovers), and any
+ * `payload-warm-*` Proxmox VM with no matching row. User-owned sessions are
+ * never touched.
+ *
+ * Pass `--zero` to also set every `vm_types.warm_pool_size = 0`, so a running
+ * reconciler won't immediately refill the pool.
+ */
+async function poolDestroy() {
+  const zeroPool = process.argv.includes("--zero");
+  const config = getProxmoxConfig();
+  const proxmox = createProxmoxClient(config);
+  const guac = createGuacamoleClient(getGuacamoleConfig());
+
+  if (zeroPool) {
+    // Disable first, so the reconciler can't boot new warm VMs mid-cleanup.
+    await db.update(vmTypes).set({ warmPoolSize: 0, updatedAt: new Date() });
+    console.log("Set warm_pool_size = 0 for all VM types.");
+  }
+
+  // 1. Ownerless pool sessions in the DB (warm = ready, pending/provisioning = still booting).
+  const rows = await db
+    .select()
+    .from(vmSessions)
+    .where(
+      and(
+        isNull(vmSessions.userId),
+        inArray(vmSessions.state, ["warm", "pending", "provisioning"]),
+      ),
+    );
+  console.log(`Found ${rows.length} warm/warming pool session(s) in the DB.`);
+
+  const handledVmids = new Set<number>();
+  for (const row of rows) {
+    console.log(`→ Destroying pool session #${row.id} (state=${row.state}, vmid=${row.proxmoxVmid ?? "none"})`);
+    if (row.guacamoleConnectionId) {
+      try { await guac.deleteConnection(row.guacamoleConnectionId); } catch { /* idempotent */ }
+    }
+    if (row.guacamoleUsername) {
+      try { await guac.deleteUser(row.guacamoleUsername); } catch { /* idempotent */ }
+    }
+    if (row.proxmoxVmid && row.proxmoxNode) {
+      await destroyVm(proxmox, row.proxmoxNode, row.proxmoxVmid);
+      handledVmids.add(row.proxmoxVmid);
+    }
+    await db
+      .update(vmSessions)
+      .set({ state: "terminated", terminatedAt: new Date(), terminationReason: "admin", updatedAt: new Date() })
+      .where(eq(vmSessions.id, row.id));
+  }
+
+  // 2. Proxmox orphans named payload-warm-* with no live row we just handled.
+  let orphanCount = 0;
+  try {
+    const vms = await proxmox.listVms(config.defaultNode);
+    const orphans = vms.filter(
+      (v) =>
+        typeof v.name === "string" &&
+        v.name.startsWith("payload-warm-") &&
+        v.template !== 1 &&
+        !handledVmids.has(v.vmid),
+    );
+    for (const vm of orphans) {
+      console.log(`→ Destroying orphan warm VM ${vm.vmid} (${vm.name})`);
+      await destroyVm(proxmox, config.defaultNode, vm.vmid);
+      orphanCount += 1;
+    }
+  } catch (error) {
+    console.warn("Could not list Proxmox VMs for orphan sweep:", error instanceof Error ? error.message : error);
+  }
+
+  console.log(`\nDone: destroyed ${rows.length} pool session(s) + ${orphanCount} orphan warm VM(s).`);
+  if (!zeroPool) {
+    console.log("Note: if the app is running, the reconciler will refill the pool within ~15s.");
+    console.log("Re-run with `--zero` to also set warm_pool_size=0 and keep it empty.");
+  }
+}
+
+async function destroyVm(proxmox: ProxmoxClient, node: string, vmid: number) {
+  try {
+    const stopUpid = await proxmox.stopVm(node, vmid);
+    await proxmox.waitForTask({ node, upid: stopUpid });
+  } catch {
+    // may already be stopped
+  }
+  try {
+    const deleteUpid = await proxmox.deleteVm(node, vmid);
+    await proxmox.waitForTask({ node, upid: deleteUpid });
+    console.log(`  deleted VM ${vmid}`);
+  } catch (error) {
+    console.warn(`  failed to delete VM ${vmid}:`, error instanceof Error ? error.message : error);
+  }
 }
 
 async function testClone() {

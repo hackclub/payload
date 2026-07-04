@@ -14,10 +14,6 @@ type ProvisionJobData = { sessionId: number };
 type WarmJobData = { sessionId: number };
 type BindJobData = { sessionId: number };
 
-// Quick re-verification timeout when confirming a warm VM is still reachable at
-// bind time — much shorter than the cold-boot IP discovery budget.
-const HEALTH_IP_TIMEOUT_MS = 15_000;
-
 /** Thrown by runBindPhase when a warm VM is dead/unreachable and must be recycled. */
 export class WarmVmUnhealthyError extends Error {
   constructor(message: string) {
@@ -214,8 +210,12 @@ async function runBindPhase(sessionId: number) {
   const proxmoxConfig = getProxmoxConfig();
   const proxmox = createProxmoxClient(proxmoxConfig);
 
-  // --- Health check: confirm the VM is still running and reachable. A warm VM
-  // may have crashed, rebooted, or lost its DHCP lease while idle. ---
+  // --- Health check: confirm the VM is still running. One fast Proxmox API
+  // call — no SSH. We trust the IP discovered during the warm phase: DHCP
+  // leases are 12h and a warm VM lives < WARM_MAX_AGE (2h), so its IP is
+  // stable. Re-polling the SSH neighbor table here added ~10-15s to every
+  // claim (an idle VM has no fresh ARP entry) for no real benefit. If the VM
+  // died, getVmStatus catches it → discard → cold re-provision. ---
   let status: { status: string };
   try {
     status = await proxmox.getVmStatus(node, vmid);
@@ -228,36 +228,25 @@ async function runBindPhase(sessionId: number) {
     throw new WarmVmUnhealthyError(`VM ${vmid} is ${status.status}, not running`);
   }
 
-  let vmIp = session.vmIp ?? undefined;
-  try {
-    const macAddress = await proxmox.getPrimaryMacAddress(node, vmid);
-    vmIp = await discoverIpFromProxmoxNeighborTable({
-      macAddress,
-      config: proxmoxConfig,
-      timeoutMs: HEALTH_IP_TIMEOUT_MS,
-    });
-  } catch (error) {
-    throw new WarmVmUnhealthyError(
-      `VM ${vmid} IP not resolvable at bind: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (vmIp !== session.vmIp) {
-    await db
-      .update(vmSessions)
-      .set({ vmIp, updatedAt: new Date() })
-      .where(eq(vmSessions.id, sessionId));
+  const vmIp = session.vmIp ?? undefined;
+  if (!vmIp) {
+    // A warm/booted VM should always have a recorded IP; if not, recycle it.
+    throw new WarmVmUnhealthyError(`VM ${vmid} has no recorded IP to bind`);
   }
 
-  // --- Rename the clone to reflect its owner (payload-<user>-<type>). ---
-  if (session.userId) {
-    const owner = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
-    const identity = owner?.name ?? owner?.slackId ?? "user";
+  // --- Rename the clone to reflect its owner (payload-<user>-<type>).
+  // Cosmetic and independent of binding, so run it concurrently with the
+  // Guacamole work instead of blocking on it. ---
+  const renamePromise = (async () => {
+    if (!session.userId) return;
     try {
+      const owner = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
+      const identity = owner?.name ?? owner?.slackId ?? "user";
       await proxmox.setVmName(node, vmid, ownedVmName(identity, vmType.slug));
     } catch {
       // Cosmetic only — never fail a bind because a rename didn't take.
     }
-  }
+  })();
 
   // --- Guacamole registration (one-shot user + connection). ---
   const guac = createGuacamoleClient(getGuacamoleConfig());
@@ -341,6 +330,9 @@ async function runBindPhase(sessionId: number) {
       payload: { ip: vmIp, guacamoleConnectionId },
     });
     publish({ type: "ready", state: "ready", sessionId, data: { ip: vmIp } });
+
+    // Let the (concurrent) cosmetic rename finish; it never rejects.
+    await renamePromise;
   } catch (error) {
     // Clean up any Guacamole resources this bind created before rethrowing.
     if (guacamoleConnectionId) {

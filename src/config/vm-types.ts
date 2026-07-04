@@ -73,6 +73,6 @@ export const vmTypeSeeds = [
         bootDelayMs: 1000,
         expensive: true,
         memoryMb: 8192,
-        warmPoolSize: 1,
+        warmPoolSize: 0,
     },
 ] as const;
