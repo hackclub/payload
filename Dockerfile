@@ -52,7 +52,7 @@ WORKDIR /app
 
 # ssh for provision-vm jobs
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssh-client ca-certificates \
+    && apt-get install -y --no-install-recommends openssh-client sshpass ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # sharp needs its prebuilt linux-x64 binary at runtime; Next.js standalone
