@@ -55,6 +55,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends openssh-client ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# sharp needs its prebuilt linux-x64 binary at runtime; Next.js standalone
+# output does not include optional deps, so install it in the runner image.
+RUN npm install -g sharp@0.33 --os=linux --cpu=x64 --libc=glibc
+
+# tsx lets us run the .ts migration/seed scripts at runtime.
+RUN npm install -g tsx
+
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
@@ -78,7 +85,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/src ./src
 COPY --from=builder --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x docker-entrypoint.sh
+
 USER nextjs
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["./docker-entrypoint.sh"]
