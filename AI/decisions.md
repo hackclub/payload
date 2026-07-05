@@ -743,3 +743,74 @@ Linux and Windows VMs.
   finishes before the reviewer logs in. No login-timing race remains for Windows.
 - Reverses the v1 "guest agent not used" stance for Linux (the deployed Linux
   template has `agent: 1`, contradicting the older note in `integrations/proxmox.md`).
+
+## ADR-0035 — Customization via an in-session companion agent + spool; installs and startup scripts
+
+**Date:** 2026-07-05 | **Status:** Accepted (supersedes ADR-0034's *apply
+mechanics*; the guest-agent transport and "run after ready, best-effort" model
+from ADR-0034 are kept)
+
+ADR-0034 applied the wallpaper from *outside* the user session (guest-exec runs
+as SYSTEM/root). On Windows this meant a scheduled task running a VBScript +
+`rundll32`; on Linux, overwriting the backdrop file and scraping DISPLAY/DBUS
+from `/proc` to `xfdesktop --reload`. It worked but was fragile: a terminal
+flash and ~10s latency on Windows, no reliable live repaint on Linux, and it did
+not generalize to installing programs or running reviewer scripts. Customization
+also expanded in scope: reviewers now want to **install arbitrary programs** and
+**run a startup script on every VM they launch**, in addition to the wallpaper.
+
+**Decision:** Split customization across **two executors**, chosen by the
+privilege the task needs, and keep `customize-vm` (post-`ready`, best-effort) as
+the single orchestrator.
+
+- **Companion agent** — a small **Rust** binary (`agent/`), baked into templates,
+  that runs **as the logged-in reviewer inside their desktop session**. It owns
+  user-session tasks: the wallpaper (set live via `SystemParametersInfoW` on
+  Windows / `xfconf` + `xfdesktop --reload` on Linux) and in-session scripts.
+  Windows build is GUI-subsystem (`windows_subsystem="windows"`) → zero console
+  window; Linux build autostarts in XFCE and has DISPLAY/DBUS natively. This
+  removes the schtasks/VBS/rundll32 dance and the `/proc` scraping entirely.
+- **Guest agent** (Proxmox `/agent/exec`, SYSTEM/root — already have it) owns
+  admin tasks: **package installs** (`choco` on Windows, `apt` on Linux) and
+  the **admin variant** of the startup script. These need elevation the
+  companion (limited user + UAC) can't get, so Payload runs them directly.
+
+**Transport = a local spool directory, no networking.** Payload writes task
+files into the spool *via the guest agent* (SYSTEM/root, works with no session
+present); the companion polls the spool as the user, executes, and writes a
+result file. This reuses the guest-agent trust boundary — there is no VM→Payload
+network channel or auth. Task-typed JSON (`wallpaper`, `run-script`) so new
+user-session customizations are new task types, not protocol changes. Spool
+paths: `C:\ProgramData\payload\spool` (Windows), `~/.payload/spool` (Linux).
+See `AI/customization.md` for the protocol and `agent/README.md` for the build.
+
+**Installs are free-form, not an allowlist.** Reviewers pick from curated
+quick-pick chips **or** type any package name. This grants no privilege they
+don't already have — they log in as local-admin `shipwrights` on an ephemeral,
+cloned VM (never the golden template). Hardening: package names are
+charset-validated (`^[A-Za-z0-9][A-Za-z0-9._+-]*$`) and passed as **argv**
+(never shell-interpolated); script bodies are transferred as **files** and
+executed by path, never interpolated into a command.
+
+**Startup script runs in either context, reviewer's choice** (`runAsAdmin`
+per OS): admin → guest agent (SYSTEM/root, before connect); in-session →
+companion (runs in the desktop, can open apps). It runs once per session.
+
+**Consequences:**
+- New `agent/` Rust crate in-repo (source committed; `target/` + binaries
+  gitignored). Binaries are cross-compiled (`cargo xwin` for Windows) and baked
+  into templates out-of-band — see `AI/runbooks/bake-companion-agent.md`.
+- New nullable `user` columns: `install_packages_windows`/`_linux` (jsonb),
+  `startup_script_windows`/`_linux` (text) + `_run_as_admin` (bool)
+  (migration `0009`). New `/api/customization/packages` +
+  `/startup-script` routes; the `/customization` page gains Programs + Startup
+  Script sections.
+- `customize-vm` now runs three independent best-effort steps (wallpaper,
+  installs, startup script), each logging its own event
+  (`packages_installed`/`_failed`, `startup_script_done`/`_failed`,
+  `wallpaper_applied`/`_failed`) and skipped on retry once done.
+- **Prereq:** the Windows template must have Chocolatey installed for installs.
+- Editing golden templates only affects **future** clones; existing
+  `payload-warm-*` VMs must be recycled after a template rebake (ADR-0033).
+- macOS/Android remain uncustomized (`guestOs()` returns null); the macOS
+  companion is future work (agent untested on macOS).

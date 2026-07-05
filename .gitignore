@@ -33,6 +33,11 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# rust companion agent (agent/) — build artifacts and compiled binaries.
+# The source is committed; the binaries are baked into VM templates out-of-band.
+/agent/target
+*.pdb
+
 # vercel
 .vercel
 

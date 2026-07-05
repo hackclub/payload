@@ -1,26 +1,28 @@
 import { db } from "@/db";
 import { vmSessions, vmSessionEvents, vmTypes, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createProxmoxClient, getProxmoxConfig } from "@/lib/proxmox/config";
-import { applyWallpaper, wallpaperSupported } from "@/lib/wallpaper";
+import { guestOs } from "@/lib/guest/transfer";
+import { applyWallpaper } from "@/lib/wallpaper";
+import { getDefaultWallpaper } from "@/lib/wallpaper/default";
+import { installPackages, sanitizePackages } from "@/lib/installs";
+import { runStartupScript } from "@/lib/scripts";
 
 type CustomizeJobData = { sessionId: number };
 
 /**
- * Background customization pass (ADR-0034). Runs after a session is `ready` and
- * the reviewer can already connect — applies the owner's saved wallpaper into
- * the running VM via the guest agent. Never touches session state; failure is
- * logged and left to BullMQ retries, then dropped.
+ * Background customization pass (ADR-0035). Runs after a session is `ready` and
+ * the reviewer can already connect. Applies the owner's saved customizations —
+ * wallpaper (user session, via the companion agent + spool), package installs
+ * and startup scripts (SYSTEM/root via the guest agent). Never touches session
+ * state. Each step is independent and best-effort; completed steps are recorded
+ * so a job retry skips them and only re-runs what failed.
  */
 export async function processCustomizeVm(jobData: CustomizeJobData) {
   const { sessionId } = jobData;
 
-  const session = await db.query.vmSessions.findFirst({
-    where: eq(vmSessions.id, sessionId),
-  });
+  const session = await db.query.vmSessions.findFirst({ where: eq(vmSessions.id, sessionId) });
   if (!session) return;
-
-  // Only meaningful once the VM exists and is (or was) connectable.
   if (!session.userId || !session.proxmoxVmid || !session.proxmoxNode) return;
   if (!["ready", "active"].includes(session.state)) return;
 
@@ -28,31 +30,82 @@ export async function processCustomizeVm(jobData: CustomizeJobData) {
     db.query.vmTypes.findFirst({ where: eq(vmTypes.id, session.vmTypeId) }),
     db.query.users.findFirst({ where: eq(users.id, session.userId) }),
   ]);
+  if (!vmType || !user) return;
 
-  if (!vmType || !user?.wallpaperImage) return; // nothing to customize
-  if (!wallpaperSupported(vmType.slug)) return;
+  const os = guestOs(vmType.slug);
+  if (!os) return; // customization unsupported for this OS (android/macos)
 
+  const packages = sanitizePackages(os === "windows" ? user.installPackagesWindows : user.installPackagesLinux);
+  const script = os === "windows" ? user.startupScriptWindows : user.startupScriptLinux;
+  const runAsAdmin = os === "windows" ? user.startupScriptWindowsRunAsAdmin : user.startupScriptLinuxRunAsAdmin;
+  const wallpaper = user.wallpaperImage;
+
+  const node = session.proxmoxNode;
+  const vmid = session.proxmoxVmid;
   const proxmox = createProxmoxClient(getProxmoxConfig());
 
+  const results: boolean[] = [];
+
+  // Wallpaper first — it just drops a spool task (fast) and repaints promptly.
+  // Reviewers who haven't uploaded one still get the branded Hack Club default,
+  // so every VM looks like Payload out of the box.
+  results.push(
+    await step(sessionId, "wallpaper_applied", "wallpaper_failed", async () =>
+      applyWallpaper({
+        proxmox,
+        node,
+        vmid,
+        os,
+        sessionId,
+        image: wallpaper ? Buffer.from(wallpaper) : await getDefaultWallpaper(),
+      }),
+    ),
+  );
+
+  if (packages.length > 0) {
+    results.push(
+      await step(sessionId, "packages_installed", "packages_failed", () =>
+        installPackages(proxmox, node, vmid, os, packages),
+      ),
+    );
+  }
+
+  if (script && script.trim().length > 0) {
+    results.push(
+      await step(sessionId, "startup_script_done", "startup_script_failed", () =>
+        runStartupScript({ proxmox, node, vmid, os, sessionId, script, runAsAdmin }),
+      ),
+    );
+  }
+
+  // Surface a retry if anything failed; done steps are skipped next attempt.
+  if (results.some((ok) => !ok)) {
+    throw new Error("one or more customization steps failed");
+  }
+}
+
+/** Run a step unless already completed; log its outcome. Returns success. */
+async function step(
+  sessionId: number,
+  doneKind: string,
+  failKind: string,
+  fn: () => Promise<void>,
+): Promise<boolean> {
+  const already = await db.query.vmSessionEvents.findFirst({
+    where: and(eq(vmSessionEvents.vmSessionId, sessionId), eq(vmSessionEvents.kind, doneKind)),
+  });
+  if (already) return true;
+
   try {
-    await applyWallpaper({
-      proxmox,
-      node: session.proxmoxNode,
-      vmid: session.proxmoxVmid,
-      osSlug: vmType.slug,
-      sessionId,
-      image: Buffer.from(user.wallpaperImage),
-    });
-    await db.insert(vmSessionEvents).values({
-      vmSessionId: sessionId,
-      kind: "wallpaper_applied",
-    });
+    await fn();
+    await db.insert(vmSessionEvents).values({ vmSessionId: sessionId, kind: doneKind });
+    return true;
   } catch (error) {
     await db.insert(vmSessionEvents).values({
       vmSessionId: sessionId,
-      kind: "wallpaper_failed",
+      kind: failKind,
       payload: { error: error instanceof Error ? error.message : String(error) },
     });
-    throw error; // let BullMQ retry per the job's attempts policy
+    return false;
   }
 }

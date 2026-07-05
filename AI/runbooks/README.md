@@ -17,4 +17,6 @@ Operational procedures for the on-call human. Keep copy-paste ready and current.
   Proxmox after an app or worker crash mid-terminate
 - [allowlist-update.md](./allowlist-update.md) — add or remove a reviewer
 - [rebuild-template.md](./rebuild-template.md) — when an OS template needs rebuilding
+- [bake-companion-agent.md](./bake-companion-agent.md) — bake the customization
+  companion agent (+ Chocolatey) into the Windows/Linux templates (ADR-0035)
 - [guacamole-down.md](./guacamole-down.md) — what to do if Guacamole stops responding

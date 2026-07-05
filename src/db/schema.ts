@@ -19,11 +19,24 @@ export const users = pgTable("user", {
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
   slackId: text("slack_id"),
-  // Per-reviewer wallpaper (customization). Applied to every VM they launch,
-  // in the background after bind (see customize-vm job). Null = template default.
+  // Per-reviewer customization, applied to every VM they launch in the
+  // background after bind (see customize-vm job). All null/empty = template
+  // default. See ADR-0035.
+  //
+  // Wallpaper (user-session task, applied by the companion agent).
   wallpaperImage: bytea("wallpaper_image"),
   wallpaperMime: text("wallpaper_mime"),
   wallpaperUpdatedAt: timestamp("wallpaper_updated_at", { withTimezone: true }),
+  // Packages to install per-OS (admin task, run as SYSTEM/root via the guest
+  // agent). Windows = Chocolatey package ids, Linux = apt package names.
+  installPackagesWindows: jsonb("install_packages_windows").$type<string[]>().notNull().default([]),
+  installPackagesLinux: jsonb("install_packages_linux").$type<string[]>().notNull().default([]),
+  // Per-OS startup script run on every VM of that type. `runAsAdmin` picks the
+  // executor: true → guest agent (SYSTEM/root), false → companion (user session).
+  startupScriptWindows: text("startup_script_windows"),
+  startupScriptWindowsRunAsAdmin: boolean("startup_script_windows_run_as_admin").notNull().default(true),
+  startupScriptLinux: text("startup_script_linux"),
+  startupScriptLinuxRunAsAdmin: boolean("startup_script_linux_run_as_admin").notNull().default(true),
 });
 
 export const accounts = pgTable(

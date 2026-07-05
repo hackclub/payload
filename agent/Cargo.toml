@@ -1,0 +1,29 @@
+[package]
+name = "payload-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Payload in-session companion agent: applies user-session VM customizations (wallpaper, in-session scripts) dropped into a local spool directory by the Proxmox guest agent. No networking."
+
+[[bin]]
+name = "payload-agent"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Windows: set the wallpaper in-session via SystemParametersInfoW. The
+# windows_subsystem="windows" attribute (see main.rs) makes this a GUI-subsystem
+# binary with zero console window.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

@@ -21,12 +21,15 @@ hours** (hard cap) or **30 minutes** of browser inactivity, whichever comes firs
 7. [integrations/proxmox.md](./integrations/proxmox.md)
 8. [integrations/guacamole.md](./integrations/guacamole.md)
 9. [vm-templates.md](./vm-templates.md) — per-OS template prep checklist
-10. [design-system.md](./design-system.md) — Hack Club theme + FlyonUI usage
-11. [decisions.md](./decisions.md) — log of architectural decisions
-12. [roadmap.md](./roadmap.md) — v1 scope and future work
-13. [runbooks/](./runbooks) — operational procedures
+10. [customization.md](./customization.md) — per-reviewer wallpaper / installs / startup scripts (ADR-0035)
+11. [design-system.md](./design-system.md) — Hack Club theme + FlyonUI usage
+12. [decisions.md](./decisions.md) — log of architectural decisions
+13. [roadmap.md](./roadmap.md) — v1 scope and future work
+14. [runbooks/](./runbooks) — operational procedures
     - [runbooks/deploy-payload-lxc.md](./runbooks/deploy-payload-lxc.md) —
       production deploy guide (Docker-in-LXC on Proxmox)
+    - [runbooks/bake-companion-agent.md](./runbooks/bake-companion-agent.md) —
+      bake the customization companion agent into the VM templates
 
 ## Operating principles for agents
 
