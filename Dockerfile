@@ -76,8 +76,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Migrations and CLI scripts ship alongside the app so the operator can run
-# `docker compose run --rm app node -e ...` for one-shot tasks.
+# Migrations and CLI scripts ship alongside the app. We need the full
+# node_modules (rather than the trimmed standalone set) so tsx can resolve
+# dotenv/drizzle-orm/postgres etc. at runtime.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
