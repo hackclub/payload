@@ -50,9 +50,9 @@ RUN pnpm build
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 
-# ssh for provision-vm jobs
+# ssh/sshpass for provision-vm jobs, git for repo-setup clones
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssh-client sshpass ca-certificates \
+    && apt-get install -y --no-install-recommends openssh-client sshpass git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # sharp needs its prebuilt linux-x64 binary at runtime; Next.js standalone
