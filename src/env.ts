@@ -88,7 +88,7 @@ const envSchema = z.object({
   // are enqueued.
   AI_BASE_URL: z.string().url().default("https://ai.hackclub.com/proxy/v1"),
   AI_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().min(1).default("z-ai/glm-5.2"),
+  AI_MODEL: z.string().min(1).default("deepseek/deepseek-v4-pro"),
   // Reject cloned repos larger than this (checkout size, not history).
   REPO_MAX_CLONE_MB: z.coerce.number().int().positive().default(200),
 });

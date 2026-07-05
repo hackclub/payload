@@ -22,14 +22,23 @@ export type RepoAnalysis = {
 
 const SYSTEM_PROMPT = `You are an expert build engineer preparing a project for a code reviewer.
 
-The reviewer uses a throwaway Debian 12 (bookworm) XFCE VM, logged in as user "shipwrights" (home /home/shipwrights). Passwordless sudo is pre-configured — use \`sudo\` normally. The repo will already be cloned to ~/project before your script runs (the script must NOT clone it).
+The reviewer uses a throwaway Debian 13 (trixie) XFCE VM, logged in as user "shipwrights" (home /home/shipwrights). Passwordless sudo is pre-configured (password: \`shipwrights\`) — use \`sudo\` normally. The repo will already be cloned to ~/project before your script runs (the script must NOT clone it).
+
+The VM is NOT bare — these toolchains are already installed and on PATH. USE THEM; do not reinstall:
+- Node.js v24.16.0 + npm 11.13.0 + npx (via nvm at ~/.config/nvm, NVM_DIR=~/.config/nvm)
+- Python 3.13.13 (at ~/.local/bin/python3; \`pip\` is an alias for \`uv run pip\` — use \`python3 -m pip\` or \`uv pip\` instead)
+- Rust 1.96.0 + cargo 1.96.0 (via rustup at ~/.cargo)
+- Go (/usr/local/go/bin/go)
+- git 2.47.3, curl, wget, make, gcc/g++ 14.2.0, pkg-config
+- apt 3.0.3, dpkg, systemctl (no docker/podman)
+- 30 GB disk, 3.8 GB RAM, DISPLAY=:10.0
 
 Your job: produce TWO artifacts.
 
 1. A **bash setup script** that gets the project as close to runnable/reviewable as possible:
    - Non-interactive: use apt-get -y, npm ci/install silently accepting defaults, etc. NEVER prompt.
    - Install required toolchains (node/python/rust/etc.) and dependencies, build the project if applicable, and prepare anything the reviewer needs (e.g. .env from .env.example with sane placeholder values, database setup with sqlite/docker if trivial).
-   - Assume a bare Debian 12: git, curl, ca-certificates and build-essential may be present, nothing else. Prefer apt packages; use official installers (nvm, rustup, uv) when apt versions are too old.
+   - The VM already has Node, Python, Rust, Go, git, gcc, make — check \`command -v\` before installing. Only install something if it is genuinely missing or the wrong version. Use apt for system packages; use \`nvm install\`, \`rustup\`, \`uv\` etc. only when the pre-installed version is insufficient.
    - Work from ~/project (cd there at the start).
    - PROGRESS REPORTING (mandatory): the runtime provides two helper functions. Call \`payload_steps_total N\` once at the top (N = number of phases), then \`payload_step "Short description"\` immediately before each phase. Every major phase (install toolchain, install deps, build, prepare config…) is one step. Do not define these functions yourself.
    - Keep going on partial failure where sensible (e.g. optional tooling), but let genuinely fatal errors stop the script (set -e is fine combined with explicit \`|| true\` on optional parts).
@@ -41,7 +50,7 @@ Your job: produce TWO artifacts.
    - Project structure: the handful of files/dirs worth reading first.
    - Gotchas / anything unusual a reviewer should know, and any setup steps that could not be automated (e.g. real API keys to fill into .env).
 
-LINUX-ONLY CHECK: Payload only provides Debian Linux VMs. If the project fundamentally cannot be built and run on Debian 12 — e.g. a Windows-only application (WPF/WinForms/WinUI, .NET Framework GUI, Windows drivers/services), a macOS/iOS app (Swift/Xcode), a watchOS/tvOS app, or anything requiring a platform Linux cannot provide — do NOT produce the two artifacts. Instead respond with exactly one fenced block:
+LINUX-ONLY CHECK: Payload only provides Debian Linux VMs. If the project fundamentally cannot be built and run on Debian 13 — e.g. a Windows-only application (WPF/WinForms/WinUI, .NET Framework GUI, Windows drivers/services), a macOS/iOS app (Swift/Xcode), a watchOS/tvOS app, or anything requiring a platform Linux cannot provide — do NOT produce the two artifacts. Instead respond with exactly one fenced block:
 \`\`\`error
 <one short sentence telling the reviewer why this project can't be set up on a Linux VM>
 \`\`\`

@@ -41,8 +41,7 @@ export default function RepoReviewForm({ disabledReason = null }: { disabledReas
         <h2 className="text-xl font-bold text-hc-snow">Review a project</h2>
       </div>
       <p className="text-hc-muted text-sm mb-4">
-        Paste a repository URL and AI will prepare a Linux VM for you — dependencies installed,
-        project built, and a reviewer guide opened on the desktop.
+        Use AI to automatically setup the project !
       </p>
 
       <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
@@ -59,7 +58,7 @@ export default function RepoReviewForm({ disabledReason = null }: { disabledReas
           disabled={isPending || disabled || !repoUrl.trim()}
           className="bg-hc-purple hover:bg-hc-purple/80 text-white font-bold py-2.5 px-6 rounded-hc transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         >
-          {isPending ? "Starting…" : "Set up & review"}
+          {isPending ? "Starting…" : "Start"}
         </button>
       </form>
 

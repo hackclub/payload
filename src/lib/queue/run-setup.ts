@@ -14,6 +14,7 @@ import {
   RUNNER_PATH,
   SETUP_SCRIPT_PATH,
 } from "@/lib/repo-setup/vm-scripts";
+import { pruneTerminalRepoSetups } from "@/lib/repo-setup/history";
 
 export type RunSetupJobData = { setupId: number };
 
@@ -115,7 +116,7 @@ export async function processRunSetup(jobData: RunSetupJobData) {
     }));
 
   if (!filesOk || !launchedOk) {
-    await markFailed(setupId, "Could not deliver the setup to the VM");
+    await markFailed(setupId, setup.userId, "Could not deliver the setup to the VM");
     throw new Error("repo setup delivery failed"); // surface a BullMQ retry
   }
 
@@ -128,6 +129,7 @@ export async function processRunSetup(jobData: RunSetupJobData) {
       .update(repoSetups)
       .set({ status: "done", updatedAt: new Date() })
       .where(eq(repoSetups.id, setupId));
+    await pruneTerminalRepoSetups(setup.userId);
     await logEvent(sessionId, "setup_done", {});
     await notify(
       proxmox, node, vmid, "linux",
@@ -140,7 +142,7 @@ export async function processRunSetup(jobData: RunSetupJobData) {
       exitCode === null
         ? "The setup script did not finish within the time limit"
         : `The setup script exited with code ${exitCode}`;
-    await markFailed(setupId, reason);
+    await markFailed(setupId, setup.userId, reason);
     await logEvent(sessionId, "setup_failed", { exitCode });
     await notify(
       proxmox, node, vmid, "linux",
@@ -176,11 +178,12 @@ async function pollExitCode(proxmox: ProxmoxClient, node: string, vmid: number):
   return null;
 }
 
-async function markFailed(setupId: number, error: string) {
+async function markFailed(setupId: number, userId: string, error: string) {
   await db
     .update(repoSetups)
     .set({ status: "failed", error, updatedAt: new Date() })
     .where(eq(repoSetups.id, setupId));
+  await pruneTerminalRepoSetups(userId);
 }
 
 async function logEvent(sessionId: number, kind: string, payload: Record<string, unknown>) {

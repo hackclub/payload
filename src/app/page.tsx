@@ -2,7 +2,7 @@ import { auth, signIn, signOut } from "@/auth";
 import { db } from "@/db";
 import { vmSessions, vmTypes, repoSetups } from "@/db/schema";
 import { getAccessContext } from "@/lib/access";
-import { eq, desc, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import Link from "next/link";
 import { vmTypeSeeds } from "@/config/vm-types";
 import DashboardLive from "./DashboardLive";
@@ -11,6 +11,7 @@ import OnboardingModal from "@/components/OnboardingModal";
 import LaunchVmForm from "@/components/LaunchVmForm";
 import RepoReviewForm from "@/components/RepoReviewForm";
 import RepoSetupsPanel, { type RepoSetupView } from "@/components/RepoSetupsPanel";
+import { MAX_REPO_SETUP_HISTORY } from "@/lib/repo-setup/history";
 import { destroySession } from "./page-actions";
 
 type UserWithSlackId = {
@@ -204,26 +205,37 @@ export default async function Dashboard() {
   });
 
   // "Review a Repo" (AI setup): shown only when the AI is configured and a
-  // Linux VM type exists to run the result on. Done rows older than a day are
-  // hidden (the session card is the interesting thing by then); failed rows
-  // stick around until dismissed.
+  // Linux VM type exists to run the result on. Active setups are always shown;
+  // terminal (done/failed) ones are capped at MAX_REPO_SETUP_HISTORY — older
+  // rows are auto-pruned by pruneTerminalRepoSetups.
   const aiSetupAvailable = !!env.AI_API_KEY && enabledVmTypes.some((t) => t.slug === "linux");
-  const userRepoSetups: RepoSetupView[] = aiSetupAvailable
-    ? (
-        await db.query.repoSetups.findMany({
-          where: sql`${repoSetups.userId} = ${session.user.id!} AND (${repoSetups.status} != 'done' OR ${repoSetups.updatedAt} > now() - interval '1 day')`,
-          orderBy: [desc(repoSetups.createdAt)],
-          limit: 10,
-        })
-      )
-        .map((s) => ({
-          id: s.id,
-          repoUrl: s.repoUrl,
-          status: s.status,
-          error: s.error,
-          vmSessionId: s.vmSessionId,
-        }))
-    : [];
+  let userRepoSetups: RepoSetupView[] = [];
+  if (aiSetupAvailable) {
+    const [active, terminal] = await Promise.all([
+      db.query.repoSetups.findMany({
+        where: and(
+          eq(repoSetups.userId, session.user.id!),
+          inArray(repoSetups.status, ["pending", "analyzing", "analyzed", "running"]),
+        ),
+        orderBy: [desc(repoSetups.createdAt)],
+      }),
+      db.query.repoSetups.findMany({
+        where: and(
+          eq(repoSetups.userId, session.user.id!),
+          inArray(repoSetups.status, ["done", "failed"]),
+        ),
+        orderBy: [desc(repoSetups.createdAt), desc(repoSetups.id)],
+        limit: MAX_REPO_SETUP_HISTORY,
+      }),
+    ]);
+    userRepoSetups = [...active, ...terminal].map((s) => ({
+      id: s.id,
+      repoUrl: s.repoUrl,
+      status: s.status,
+      error: s.error,
+      vmSessionId: s.vmSessionId,
+    }));
+  }
 
   const watchedSessions = userSessions
     .filter((s) => s.state !== "terminated" && s.state !== "errored")

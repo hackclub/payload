@@ -15,7 +15,7 @@ export type RepoSetupView = {
 
 const STATUS_INFO: Record<RepoSetupView["status"], { label: string; color: string; active: boolean }> = {
   pending: { label: "Queued", color: "text-hc-yellow", active: true },
-  analyzing: { label: "AI is analyzing the repo…", color: "text-hc-purple", active: true },
+  analyzing: { label: "Burning away the tokens...", color: "text-hc-purple", active: true },
   analyzed: { label: "Launching VM…", color: "text-hc-yellow", active: true },
   running: { label: "Running setup on the VM…", color: "text-hc-cyan", active: true },
   done: { label: "Setup complete", color: "text-hc-green", active: false },

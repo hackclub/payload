@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { cloneRepo, cleanupClone } from "@/lib/repo-setup/clone";
 import { buildRepoDigest } from "@/lib/repo-setup/digest";
 import { analyzeRepo } from "@/lib/repo-setup/agent";
+import { pruneTerminalRepoSetups } from "@/lib/repo-setup/history";
 import { createUserSession } from "@/lib/sessions";
 import { enqueueRunSetup } from "@/lib/queue";
 
@@ -74,6 +75,8 @@ export async function processAnalyzeRepo(jobData: AnalyzeRepoJobData) {
         updatedAt: new Date(),
       })
       .where(eq(repoSetups.id, setupId));
+    // The row just went terminal — prune older history beyond the cap.
+    await pruneTerminalRepoSetups(setup.userId).catch(() => {});
   }
 }
 

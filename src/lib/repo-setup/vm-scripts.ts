@@ -23,6 +23,28 @@ export const PROJECT_DIR = `${LINUX_HOME}/project`;
 // The progress helpers the AI script is instructed to call. Prepended to the
 // generated script, so `payload_steps_total` / `payload_step` always exist.
 const PRELUDE = `#!/usr/bin/env bash
+# ─── Source the full user profile (the setup runs in a non-login, non-
+#     interactive shell that skips these by default, leaving nvm/cargo/.local
+#     off PATH) ──────────────────────────────────────────────────────────────
+[ -f /etc/profile ] && . /etc/profile 2>/dev/null || true
+[ -f "$HOME/.bash_profile" ] && . "$HOME/.bash_profile" 2>/dev/null || true
+[ -f "$HOME/.profile" ] && . "$HOME/.profile" 2>/dev/null || true
+[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc" 2>/dev/null || true
+# Fallback: .bashrc's interactive guard (case $- in *i*) ;; *) return;; esac)
+# skips nvm/cargo init in non-interactive shells. Source them directly.
+export NVM_DIR="\${NVM_DIR:-$HOME/.config/nvm}"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" 2>/dev/null || true
+[ -s "$HOME/.cargo/env" ] && . "$HOME/.cargo/env" 2>/dev/null || true
+export PATH="$HOME/.local/bin:/usr/local/go/bin:$PATH"
+# ─── end profile setup ───────────────────────────────────────────────────────
+
+# ─── Wait for background apt/dpkg operations (e.g. VM customization) to
+#     finish before the setup script tries to install packages ────────────────
+while pgrep -x apt-get >/dev/null 2>&1 || pgrep -x dpkg >/dev/null 2>&1; do
+  sleep 2
+done
+# ─── end apt wait ─────────────────────────────────────────────────────────────
+
 # ─── Payload progress helpers (injected by the platform) ────────────────────
 PAYLOAD_TOTAL_STEPS=0
 PAYLOAD_CURRENT_STEP=0
@@ -100,7 +122,7 @@ read -rp 'Press Enter to close this window… '
  */
 export function buildLaunchScript(): string {
   return `#!/usr/bin/env bash
-(xdg-open '${GUIDE_PATH}' >/dev/null 2>&1 &)
+{ firefox-esr '${GUIDE_PATH}' || firefox '${GUIDE_PATH}' || chromium '${GUIDE_PATH}' || xdg-open '${GUIDE_PATH}'; } >/dev/null 2>&1 &
 (xfce4-terminal --geometry=110x30 --title 'Project Setup — Payload' -x bash '${RUNNER_PATH}' >/dev/null 2>&1 &)
 exit 0
 `;

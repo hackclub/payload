@@ -10,6 +10,7 @@ import { repoSetups, vmSessions } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { aiEnabled } from "@/lib/ai/client";
 import { validateRepoUrl, RepoCloneError } from "@/lib/repo-setup/clone";
+import { pruneTerminalRepoSetups } from "@/lib/repo-setup/history";
 
 export async function launchVm(vmTypeSlug: string): Promise<{ error: string } | void> {
   const authResult = await getAllowlistedUser();
@@ -84,6 +85,9 @@ export async function launchRepoReview(repoUrl: string): Promise<{ error: string
     .insert(repoSetups)
     .values({ userId: authResult.userId, yswsId: authResult.activeYswsId, repoUrl: validated })
     .returning();
+
+  // Prune stale terminal rows so the dashboard never shows more than the cap.
+  await pruneTerminalRepoSetups(authResult.userId);
 
   await enqueueAnalyzeRepo({ setupId: row.id });
   revalidatePath("/");
