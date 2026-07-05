@@ -84,6 +84,12 @@ Milestone 2 assumes the Debian XFCE template does **not** have cloud-init or
 qemu-guest-agent installed. Payload cannot rely on cloud-init regeneration or
 `/agent/network-get-interfaces`.
 
+> **Update (ADR-0034):** the deployed linux/windows/macos templates all have
+> `agent: 1` and a *responding* qemu-guest-agent (verified live). IP discovery
+> still uses the neighbor-table path, but in-guest customization (wallpaper)
+> now uses `/agent/exec` + `/agent/file-write`. `guest-exec` runs as root
+> (Linux) / SYSTEM (Windows).
+
 The current smoke-test flow is:
 
 1. Clone the template.

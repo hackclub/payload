@@ -1,6 +1,14 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, customType, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { type AdapterAccountType } from "next-auth/adapters";
+
+// Raw binary column (Postgres bytea). drizzle-orm/pg-core has no built-in bytea,
+// so define one. Used for the reviewer's uploaded wallpaper image.
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const users = pgTable("user", {
   id: text("id")
@@ -11,6 +19,11 @@ export const users = pgTable("user", {
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
   slackId: text("slack_id"),
+  // Per-reviewer wallpaper (customization). Applied to every VM they launch,
+  // in the background after bind (see customize-vm job). Null = template default.
+  wallpaperImage: bytea("wallpaper_image"),
+  wallpaperMime: text("wallpaper_mime"),
+  wallpaperUpdatedAt: timestamp("wallpaper_updated_at", { withTimezone: true }),
 });
 
 export const accounts = pgTable(

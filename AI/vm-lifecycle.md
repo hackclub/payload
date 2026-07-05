@@ -61,6 +61,10 @@ pending -> provisioning -> ready -> active
 6. Transition `provisioning -> ready`, persist `proxmox_vmid`, `vm_ip`,
    `guacamole_connection_id`, and encrypted Guacamole password.
 7. Publish session-ready notification for SSE subscribers.
+8. If the owner has a saved wallpaper, enqueue `customize-vm` (ADR-0034) —
+   *after* the ready publish, so it runs in the background via the QEMU guest
+   agent and never delays the reviewer's connection. Best-effort; failure is
+   logged (`wallpaper_failed`), never fatal.
 
 On error: log to `vm_session_events`, mark `errored`, and enqueue
 `terminate-vm` with reason `error` if any external resource was created.

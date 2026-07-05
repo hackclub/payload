@@ -683,3 +683,63 @@ TTL starts at **claim**, never at warm.
   reboot or suspend its display server (already a `vm-templates.md` requirement).
 - A reconciler orphan sweep destroys any `payload-vm-*` on Proxmox with no live
   session row (prevents pool bugs from leaking VMs, as happened pre-pool).
+
+## ADR-0034 — Per-reviewer VM customization via the QEMU guest agent
+
+**Date:** 2026-07-04 | **Status:** Accepted
+
+Reviewers want to personalize the VMs they launch, starting with the desktop
+wallpaper (uploaded once, applied to every VM they create). This is the first
+use of *in-guest* mutation; v1 provisioning deliberately avoided it.
+
+**Decision:** Drive in-guest customization through the **QEMU guest agent**
+(`/agent/exec`, `/agent/exec-status`, `/agent/file-write`) exposed by the
+Proxmox API — no custom in-VM agent, no network channel. Verified against the
+running templates: agent responds and `guest-exec` runs as **root** (Linux) /
+**SYSTEM** (Windows); macOS is untested (cold-only) and deferred.
+
+Customization runs **after** bind, in a dedicated best-effort BullMQ job
+(`customize-vm`) enqueued once the session is already `ready`. It **never gates
+the reviewer's connection** — they connect immediately, exactly as before, and
+the wallpaper lands in the background. Failure is logged (`wallpaper_failed`
+event) and retried a few times, then dropped; session state is never touched.
+
+Wallpaper mechanics (per OS, chosen because `guest-exec` is root/SYSTEM and no
+desktop session exists at apply time — we pre-seed what the reviewer's logon
+reads; see `guest-agent-exec-context`):
+- **Linux (XFCE):** overwrite the fixed file the template's backdrop points at
+  (`/home/shipwrights/Downloads/desktop-wallpaper.png`), then `chown` it back.
+- **Windows:** drop the image to `C:\ProgramData\payload\wallpaper.jpg`, then
+  apply it *inside the reviewer's session* via a scheduled task with an
+  **interactive token** (`schtasks /it`, no stored password). Two tasks:
+  `payload-wallpaper` (`ONLOGON` — fires at logon, covers the job-before-connect
+  race) and `payload-wallpaper-now` (`ONCE` + on-demand `/run` — repaints
+  immediately if the reviewer is already logged in). The task runs a **VBScript
+  via `wscript`** that sets the wallpaper regkeys and calls `rundll32
+  UpdatePerUserSystemParameters` — deliberately NOT PowerShell + `Add-Type`
+  (which compiles C# at runtime: ~40s in a *visible* console window on a cold
+  VM — the "stuck terminal" reviewers reported). Rejected alternatives, all
+  verified as broken: the machine-wide Active-Desktop policy (doesn't repaint a
+  live session — the normal case), `/rp`+`/it` together, and on-demand `/run` of
+  an `ONLOGON` task.
+- **Linux (XFCE):** overwrite the file the backdrop points at (picked up by a
+  fresh session), then — if a session is live — `xfdesktop --reload` as
+  `shipwrights` with the session's `DISPLAY`/`DBUS` lifted from `/proc` (an
+  already-connected session won't repaint from the file change alone).
+- **macOS / Android:** not supported yet (`wallpaperSupported()` returns false).
+
+Image transfer: `agent/file-write` caps `content` at 61440 chars, so the image
+(downscaled to ≤1080p JPEG with `sharp` on upload, stored as `bytea` on `user`)
+is sent in ≤45000-byte base64 chunks (`encode=0`) to temp files, then a single
+`guest-exec` concatenates + installs + cleans up. Byte-fidelity verified on live
+Linux and Windows VMs.
+
+**Consequences:**
+- New nullable `user` columns: `wallpaper_image` (bytea), `wallpaper_mime`,
+  `wallpaper_updated_at`. New `customize-vm` job + `/customization` page +
+  `/api/customization/wallpaper` (Node runtime — `sharp` is native).
+- Handles both timings on Windows: the `ONCE`/`/run` task repaints a live
+  session immediately; the `ONLOGON` task covers the case where customization
+  finishes before the reviewer logs in. No login-timing race remains for Windows.
+- Reverses the v1 "guest agent not used" stance for Linux (the deployed Linux
+  template has `agent: 1`, contradicting the older note in `integrations/proxmox.md`).

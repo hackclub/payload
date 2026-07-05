@@ -11,6 +11,7 @@ import {
   SESSION_LIFETIME_MS,
   WARM_CPU_UNITS,
   ACTIVE_CPU_UNITS,
+  enqueueCustomizeVm,
 } from "@/lib/queue";
 import { ownedVmName, warmVmName } from "@/lib/vm-naming";
 import { randomBytes } from "node:crypto";
@@ -347,6 +348,23 @@ async function runBindPhase(sessionId: number) {
       payload: { ip: vmIp, guacamoleConnectionId },
     });
     publish({ type: "ready", state: "ready", sessionId, data: { ip: vmIp } });
+
+    // Kick background customization (wallpaper) if the owner saved one. Runs
+    // entirely after `ready` so it never gates the reviewer's connection
+    // (ADR-0034). Enqueue only when there's something to apply.
+    if (session.userId) {
+      try {
+        const owner = await db.query.users.findFirst({
+          where: eq(users.id, session.userId),
+          columns: { wallpaperUpdatedAt: true },
+        });
+        if (owner?.wallpaperUpdatedAt) {
+          await enqueueCustomizeVm({ sessionId });
+        }
+      } catch {
+        // Best-effort — never fail a bind because customization couldn't be queued.
+      }
+    }
 
     // Let the (concurrent) rename + CPU-weight restore finish; it never rejects.
     await finalizeVmPromise;

@@ -4,6 +4,7 @@ import "./globals.css";
 import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
 import AdminButton from "@/components/AdminButton";
+import CustomizeButton from "@/components/CustomizeButton";
 import { FlyonUIInit } from "@/components/FlyonUIInit";
 import { auth } from "@/auth";
 
@@ -39,6 +40,7 @@ export default async function RootLayout({
                <Link className="text-2xl font-bold tracking-tight text-hc-red" href="/">Payload</Link>
             </div>
              <div className="flex items-center gap-3">
+                <CustomizeButton />
                 <AdminButton />
                 <UserMenu />
              </div>

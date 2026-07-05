@@ -34,6 +34,10 @@ export type BindVmJobData = {
   sessionId: number;
 };
 
+export type CustomizeVmJobData = {
+  sessionId: number;
+};
+
 export type TerminateVmJobData = {
   sessionId: number;
   reason: "ttl" | "idle" | "user" | "error" | "admin" | "stuck" | "warm_recycle" | "orphan";
@@ -67,6 +71,21 @@ export async function enqueueBindVm(data: BindVmJobData) {
     attempts: 2,
     backoff: { type: "exponential", delay: 3_000 },
     jobId: `bind-${data.sessionId}`,
+    removeOnComplete: true,
+    removeOnFail: 1000,
+  });
+}
+
+/**
+ * Apply the owner's saved customization (wallpaper) to a bound VM. Enqueued
+ * after the session is already `ready` — it runs in the background and never
+ * gates the reviewer's connection. Best-effort: a few retries, then give up.
+ */
+export async function enqueueCustomizeVm(data: CustomizeVmJobData) {
+  return vmQueue.add("customize-vm", data, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 4_000 },
+    jobId: `customize-${data.sessionId}`,
     removeOnComplete: true,
     removeOnFail: 1000,
   });
