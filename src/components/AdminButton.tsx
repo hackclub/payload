@@ -1,26 +1,11 @@
-import { auth } from "@/auth";
 import Link from "next/link";
-import { db } from "@/db";
-import { adminEntries } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { getAdminUser } from "@/lib/admin-guard";
 import { Settings } from "lucide-react";
 
-type UserWithSlackId = {
-  slackId?: string | null;
-};
-
 export default async function AdminButton() {
-  const session = await auth();
-  if (!session?.user) return null;
-
-  const slackId = (session.user as UserWithSlackId).slackId;
-  if (!slackId) return null;
-
-  const isAdmin = await db.query.adminEntries.findFirst({
-    where: eq(adminEntries.slackId, slackId),
-  });
-
-  if (!isAdmin) return null;
+  // Visible to platform superadmins and workspace admins alike (ADR-0036).
+  const admin = await getAdminUser();
+  if (!admin) return null;
 
   return (
     <Link

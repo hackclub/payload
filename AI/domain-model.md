@@ -56,22 +56,54 @@ Auth.js email verification / magic link tokens.
 
 Composite PK on `(identifier, token)`.
 
-### reviewer_allowlist_entries
+### ysws (workspaces / programs)
 
-The set of Slack IDs permitted to use Payload. Seeded at deploy time via
-`scripts/seed.ts`.
+The tenant. Each YSWS ("You Ship, We Ship") program is a workspace that members
+belong to and VMs are stamped with (ADR-0036). Superadmins create these.
 
 | column | type | notes |
 |--------|------|-------|
-| slack_id | text pk | Slack ID, e.g. `U0123ABC` |
-| created_at | timestamptz not null default now() | |
+| id | text pk | crypto.randomUUID() |
+| slug | text unique not null | lowercase, e.g. `high-seas` |
+| name | text not null | display name |
+| enabled | boolean not null default true | hide from switchers / block launches without deleting |
+| max_concurrent_vms | integer | per-workspace concurrent-VM ceiling; null = unlimited |
+| created_at / updated_at | timestamptz | |
 
-Simplified from the original design: no `id` column, no `note`/`added_by`
-fields, `slack_id` is the primary key directly. The seed data is currently
-hardcoded in the seed script rather than read from `src/config/reviewers.ts`.
+### ysws_memberships
 
-Authorization rule: a user may use Payload iff a row exists with the same
-`slack_id`. Enforce in server-side helpers used by every VM action and API route.
+Membership of a user (by Slack ID, so people can be authorized before their
+first login) in a workspace, with a role.
+
+| column | type | notes |
+|--------|------|-------|
+| ysws_id | text fk ysws.id (cascade) | |
+| slack_id | text | Slack ID, e.g. `U0123ABC` |
+| role | ysws_role enum | `member` or `admin` |
+| created_at | timestamptz not null | |
+
+Composite PK on `(ysws_id, slack_id)`; index on `slack_id` for "which
+workspaces is this user in?". A user in two programs has two rows.
+
+### platform_superadmins
+
+Global tier, keyed by Slack ID. Superadmins create/delete workspaces, appoint
+admins, and act in or see across every tenant. Replaces the old `admin_entries`.
+
+| column | type | notes |
+|--------|------|-------|
+| slack_id | text pk | |
+| created_at | timestamptz not null | |
+
+Authorization rules (ADR-0036, enforced in `src/lib/access.ts` and the guards):
+a user may use Payload iff they are a member of at least one enabled workspace;
+the admin panel is open to superadmins and workspace admins, scoped to the
+workspaces they administer.
+
+> **Superseded:** `reviewer_allowlist_entries` and `admin_entries` (ADR-0005)
+> were dropped in migration `0012`. Their rows were folded into a seeded
+> "Legacy" workspace by `0011`: allowlist entries became members, admin entries
+> became superadmins and Legacy admins.
 
 ### vm_types
 
@@ -119,6 +151,7 @@ The core resource: one row per ephemeral VM.
 |--------|------|-------|
 | id | integer pk identity | auto-generated |
 | user_id | text fk users.id **nullable** | owner; null while a VM sits in the warm pool (ADR-0033) |
+| ysws_id | text fk ysws.id **nullable** (set null) | owning workspace; null while warm/ownerless, stamped from the claimer's active workspace at claim (ADR-0036) |
 | vm_type_id | integer fk vm_types.id not null | |
 | state | vm_session_state not null | enum below |
 | proxmox_vmid | integer | nil until cloned |
@@ -154,6 +187,7 @@ errored      -> provisioning or termination failed; needs operator
 #### Indexes
 
 - `vm_sessions_user_state_idx` on `(user_id, state)` for "how many active VMs does this user have?"
+- `vm_sessions_ysws_state_idx` on `(ysws_id, state)` for the per-workspace concurrent-cap count and admin session/log scoping (ADR-0036)
 - `vm_sessions_state_expires_idx` on `(state, expires_at)` for TTL reaper query
 - `vm_sessions_state_heartbeat_idx` on `(state, last_heartbeat_at)` for idle reaper query
 - `vm_sessions_proxmox_vmid_idx` unique on `proxmox_vmid` (partial index, nulls not constrained)

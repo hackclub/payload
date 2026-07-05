@@ -82,14 +82,51 @@ export const verificationTokens = pgTable(
   (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })]
 );
 
-export const reviewerAllowlistEntries = pgTable("reviewer_allowlist_entries", {
-  slackId: text("slack_id").primaryKey(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+// A YSWS ("You Ship, We Ship") program / workspace. The top-level tenant:
+// members belong to it, VMs are stamped with it, and each one carries its own
+// concurrent-VM ceiling set by a platform superadmin (ADR-0036).
+export const ysws = pgTable("ysws", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  // Hide from switchers / block new launches without deleting history.
+  enabled: boolean("enabled").notNull().default(true),
+  // Ceiling on concurrent (committed) VMs across all members of this workspace.
+  // Null = unlimited. Enforced in createUserSession (ADR-0036).
+  maxConcurrentVms: integer("max_concurrent_vms"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const adminEntries = pgTable("admin_entries", {
+export const yswsRole = pgEnum("ysws_role", ["member", "admin"]);
+
+// Membership of a user (by Slack ID, so people can be pre-authorized before
+// their first login) in a YSWS. A user in two workspaces has two rows. A YSWS
+// admin manages members and may promote them to admin (ADR-0036).
+export const yswsMemberships = pgTable(
+  "ysws_memberships",
+  {
+    yswsId: text("ysws_id")
+      .notNull()
+      .references(() => ysws.id, { onDelete: "cascade" }),
+    slackId: text("slack_id").notNull(),
+    role: yswsRole("role").notNull().default("member"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.yswsId, t.slackId] }),
+    slackIdx: index("ysws_memberships_slack_idx").on(t.slackId),
+  }),
+);
+
+// Platform superadmins: global power, keyed by Slack ID. They create/delete
+// workspaces, appoint YSWS admins, and see across every tenant. This replaces
+// the old flat `admin_entries` (ADR-0036 supersedes ADR-0005's admin half).
+export const platformSuperadmins = pgTable("platform_superadmins", {
   slackId: text("slack_id").primaryKey(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const vmTypes = pgTable("vm_types", {
@@ -141,6 +178,10 @@ export const vmSessions = pgTable(
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     // Nullable: warm-pool VMs are ownerless until claimed (ADR-0033).
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    // The workspace this VM belongs to. Null while warm/ownerless; stamped from
+    // the claiming user's active YSWS at claim/create time (ADR-0036). set null
+    // on workspace delete so audit rows survive.
+    yswsId: text("ysws_id").references(() => ysws.id, { onDelete: "set null" }),
     vmTypeId: integer("vm_type_id")
       .notNull()
       .references(() => vmTypes.id),
@@ -164,6 +205,8 @@ export const vmSessions = pgTable(
   },
   (table) => ({
     userIdx: index("vm_sessions_user_state_idx").on(table.userId, table.state),
+    // Per-workspace concurrent-cap count and admin session/log scoping (ADR-0036).
+    yswsStateIdx: index("vm_sessions_ysws_state_idx").on(table.yswsId, table.state),
     stateExpiresIdx: index("vm_sessions_state_expires_idx").on(table.state, table.expiresAt),
     stateHeartbeatIdx: index("vm_sessions_state_heartbeat_idx").on(table.state, table.lastHeartbeatAt),
     proxmoxVmidIdx: uniqueIndex("vm_sessions_proxmox_vmid_idx").on(table.proxmoxVmid),
@@ -193,6 +236,21 @@ export const vmSessionsRelations = relations(vmSessions, ({ one }) => ({
   user: one(users, {
     fields: [vmSessions.userId],
     references: [users.id],
+  }),
+  ysws: one(ysws, {
+    fields: [vmSessions.yswsId],
+    references: [ysws.id],
+  }),
+}));
+
+export const yswsRelations = relations(ysws, ({ many }) => ({
+  memberships: many(yswsMemberships),
+}));
+
+export const yswsMembershipsRelations = relations(yswsMemberships, ({ one }) => ({
+  ysws: one(ysws, {
+    fields: [yswsMemberships.yswsId],
+    references: [ysws.id],
   }),
 }));
 

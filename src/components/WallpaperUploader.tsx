@@ -72,7 +72,6 @@ export default function WallpaperUploader({ hasWallpaper }: { hasWallpaper: bool
           <div className="text-center px-6 py-10 text-hc-muted">
             <p className="font-bold text-hc-smoke">Drop an image here, or click to choose</p>
             <p className="text-sm mt-1">PNG or JPG. Resized to 1080p automatically.</p>
-            <p className="text-sm mt-1">Leave empty to use the Hack Club default.</p>
           </div>
         )}
         {busy && (

@@ -1,26 +1,24 @@
-import { auth } from "@/auth";
-import { db } from "@/db";
-import { adminEntries } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { getAccessContext, adminYswsIds } from "@/lib/access";
 
-type UserWithSlackId = {
-  slackId?: string | null;
-};
-
+/**
+ * Gate for the admin panel and its APIs. Passes for a platform superadmin or
+ * any workspace admin. `adminYswsIds` scopes what a non-superadmin may see and
+ * manage; superadmins get every enabled workspace (ADR-0036).
+ */
 export async function getAdminUser() {
-  const session = await auth();
-  if (!session?.user) return null;
+  const ctx = await getAccessContext();
+  if (!ctx) return null;
 
-  const slackId = (session.user as UserWithSlackId).slackId;
-  if (!slackId) return null;
+  const yswsIds = adminYswsIds(ctx);
+  if (!ctx.isSuperadmin && yswsIds.length === 0) return null;
 
-  const adminEntry = await db.query.adminEntries.findFirst({
-    where: eq(adminEntries.slackId, slackId),
-  });
-
-  if (!adminEntry) return null;
-
-  return { session, user: session.user, userId: session.user.id ?? "", slackId };
+  return {
+    userId: ctx.userId,
+    slackId: ctx.slackId,
+    isSuperadmin: ctx.isSuperadmin,
+    adminYswsIds: yswsIds,
+    ctx,
+  };
 }
 
 export type AdminUser = NonNullable<Awaited<ReturnType<typeof getAdminUser>>>;

@@ -12,16 +12,43 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? "100"), 1), 500);
   const sessionId = url.searchParams.get("sessionId");
+  const filterYsws = url.searchParams.get("yswsId");
+
+  // Resolve which workspaces this admin may read events from. null = all
+  // (superadmin, unfiltered). Workspace admins are always restricted, and the
+  // warm pool (null ysws_id) is superadmin-only (ADR-0036).
+  let scope: string[] | null;
+  if (admin.isSuperadmin) {
+    scope = filterYsws ? [filterYsws] : null;
+  } else {
+    scope = filterYsws && admin.adminYswsIds.includes(filterYsws) ? [filterYsws] : admin.adminYswsIds;
+    if (scope.length === 0) return NextResponse.json([]);
+  }
+
+  // Collect the session ids the admin may see, so events are filtered by
+  // workspace. Skipped when scope is null (superadmin, all sessions).
+  let scopedSessionIds: number[] | null = null;
+  if (scope) {
+    const scoped = await db
+      .select({ id: vmSessions.id })
+      .from(vmSessions)
+      .where(inArray(vmSessions.yswsId, scope));
+    scopedSessionIds = scoped.map((s) => s.id);
+    if (scopedSessionIds.length === 0) return NextResponse.json([]);
+  }
 
   let events;
   if (sessionId) {
+    const sid = Number(sessionId);
+    if (scopedSessionIds && !scopedSessionIds.includes(sid)) return NextResponse.json([]);
     events = await db.query.vmSessionEvents.findMany({
-      where: eq(vmSessionEvents.vmSessionId, Number(sessionId)),
+      where: eq(vmSessionEvents.vmSessionId, sid),
       orderBy: desc(vmSessionEvents.createdAt),
       limit,
     });
   } else {
     events = await db.query.vmSessionEvents.findMany({
+      where: scopedSessionIds ? inArray(vmSessionEvents.vmSessionId, scopedSessionIds) : undefined,
       orderBy: desc(vmSessionEvents.createdAt),
       limit,
     });
@@ -38,7 +65,6 @@ export async function GET(request: Request) {
 
   const sessionMap = new Map(relatedSessions.map((s) => [s.id, s]));
 
-  // Warm-pool sessions are ownerless (null userId); drop those before lookup.
   const userIds = [...new Set(relatedSessions.map((s) => s.userId).filter((id): id is string => id !== null))];
   const sessionUsers = userIds.length > 0
     ? await db.query.users.findMany({ where: inArray(users.id, userIds) })
@@ -56,7 +82,6 @@ export async function GET(request: Request) {
     const user = session?.userId ? userMap.get(session.userId) : undefined;
     const slackId = user?.slackId ?? null;
     const cachet = slackId ? cachetProfiles.get(slackId) : undefined;
-    // Ownerless (warm-pool) sessions are owned by the system — show as "Payload".
     const isPool = !!session && session.userId === null;
 
     return {

@@ -10,7 +10,11 @@ import os from "node:os";
 
 export async function GET() {
   const admin = await getAdminUser();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Global infrastructure health is superadmin-only; workspace admins have no
+  // business seeing Proxmox/Redis/pool internals (ADR-0036).
+  if (!admin || !admin.isSuperadmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const [proxmoxStats, queueCounts, redisInfo, poolStats] = await Promise.allSettled([
     getProxmoxNodeStats(),

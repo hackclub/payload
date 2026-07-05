@@ -814,3 +814,88 @@ companion (runs in the desktop, can open apps). It runs once per session.
   `payload-warm-*` VMs must be recycled after a template rebake (ADR-0033).
 - macOS/Android remain uncustomized (`guestOs()` returns null); the macOS
   companion is future work (agent untested on macOS).
+
+---
+
+## ADR-0036 - Multi-tenant workspaces (YSWS) with scoped roles and per-workspace VM caps
+
+**Date:** 2026-07-05 | **Status:** Accepted. Supersedes the two flat lists of ADR-0005.
+
+Payload is being handed to multiple YSWS ("You Ship, We Ship") programs at once.
+The old model was two global, flat Slack-ID lists: `reviewer_allowlist_entries`
+(may use Payload) and `admin_entries` (global admin). That cannot express
+"program X has its own admins who onboard their own reviewers", "an organizer
+sees only their program's VMs and logs", "a person belongs to two programs", or
+"cap program X at N concurrent VMs".
+
+**Decision:** Introduce the workspace (YSWS) as the tenant and rebuild
+authorization around membership plus three roles.
+
+- **`ysws`** is the tenant: `id`, unique `slug`, `name`, `enabled`, and
+  `max_concurrent_vms` (null = unlimited).
+- **`ysws_memberships`** joins a Slack ID to a workspace with a `role` of
+  `member` or `admin`, keyed by `(ysws_id, slack_id)`. Keyed by Slack ID (not
+  `user_id`) so people can be authorized before their first login, exactly as
+  the old allowlist was.
+- **`platform_superadmins`** is the global tier (replaces `admin_entries`):
+  create/delete workspaces, appoint admins, and act in or see across every
+  tenant.
+- **`vm_sessions.ysws_id`** stamps each VM with its workspace. Null while a VM
+  is warm/ownerless; set from the claiming user's active workspace at
+  claim/create time. `on delete set null` so audit rows outlive a deleted
+  workspace.
+
+**Roles.** Superadmin (global) > YSWS admin (their workspaces) > member. A
+member launches and uses VMs in workspaces they belong to. A YSWS admin also
+manages that workspace's members and may promote members to admin (the trust is
+kept inside the workspace; superadmins are the only cross-tenant authority).
+
+**Active workspace.** A user in several workspaces has one active at a time,
+pinned by the `payload_active_ysws` cookie and re-validated against live
+membership on every request, falling back to their first workspace. Switching is
+a server action that verifies membership before writing the cookie. Resolution
+lives in `src/lib/access.ts::getAccessContext`, the single source the guards and
+UI read from.
+
+**Capacity stays one shared pool; the cap is a logical ceiling.** The warm pool
+and RAM budget (ADR-0033) remain global and tenant-agnostic; a VM is only
+stamped with a workspace at claim. On top of that, `createUserSession` enforces
+`max_concurrent_vms` per workspace: it counts committed VMs (pending,
+provisioning, ready, active, matching the per-user cap of ADR-0006) across all
+members and rejects over-cap launches with a `YswsCapError` surfaced as HTTP
+429 and the message "No more VM capacity available in your workspace. Please try
+again later, or contact your organizer." A second advisory lock keyed on the
+workspace (taken after the per-user lock, always in that order to avoid
+deadlock) makes the count-then-insert race-free across different members.
+
+**Scope enforcement.** `getAllowlistedUser` now means "member of some enabled
+workspace, with one active"; `getAdminUser` means "superadmin or admin of some
+workspace" and carries `adminYswsIds`. Admin session/log queries and the
+terminate action are filtered to those ids; superadmins may pass `?yswsId` to
+narrow or omit it to see all. Global infrastructure health (`/api/admin/system`,
+Proxmox/Redis/warm-pool internals) is superadmin-only. VM types stay global
+(any workspace may launch any enabled type); per-workspace type sets are
+possible future work.
+
+**Consequences:**
+- Migration `0011` creates the three tables and `vm_sessions.ysws_id`, then
+  backfills a seeded "Legacy" workspace: old allowlist rows become members, old
+  admin rows become superadmins and Legacy admins, and existing owned VMs are
+  stamped Legacy. Migration `0012` drops `reviewer_allowlist_entries` and
+  `admin_entries`. The backfill uses a fixed Legacy id
+  (`00000000-0000-0000-0000-000000000001`) that `scripts/seed.ts` reuses.
+- New routes: `/api/admin/ysws` (superadmin workspace CRUD, with live
+  member/VM counts), `/api/admin/members` (workspace-scoped membership and role
+  changes), and `/api/admin/superadmins` (superadmin-only grant/revoke of the
+  global tier; you cannot revoke your own). The old `/api/admin/allowlist` and
+  `/api/admin/admins` routes are removed.
+- The admin panel is now workspace-scoped: a workspace picker drives Members,
+  Sessions, and Logs; superadmins additionally get Workspaces (create, edit
+  name/cap/enabled, delete), Superadmins (grant/revoke the global tier), and
+  System. A workspace switcher lives in the nav next to the wordmark.
+- Members and Sessions/Logs are the same UI for a YSWS admin and a superadmin;
+  only the scope differs, so organizers get a self-serve console without new
+  surfaces.
+- The reviewer/admin management runbook moves from editing `scripts/seed.ts` to
+  the admin UI; `seed.ts` now only bootstraps the first superadmin and Legacy
+  workspace.

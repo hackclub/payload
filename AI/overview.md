@@ -16,17 +16,25 @@ is destroyed automatically.
 
 ## Users
 
-**Reviewers** — Hack Club community members on a Slack-ID allowlist. They log in
-via Hack Club Auth, pick a VM type, get a browser-embedded desktop, work for up
-to 6 hours, log out.
+Access is organized around **workspaces (YSWS programs)** since ADR-0036. Three
+roles:
 
-**Admins** — small set of operators who manage the allowlist and watch system
-health. v1 = manage by editing a YAML file in the repo and re-deploying; v2 =
-admin UI.
+**Members (reviewers)** are added to a workspace by its admins (by Slack ID).
+They log in via Hack Club Auth, pick a VM type, get a browser-embedded desktop,
+work for up to 6 hours, log out. A person can belong to several workspaces and
+switches the active one from the nav.
+
+**YSWS admins** run a program: they add and remove its members, promote members
+to admin, and see the sessions and logs for their workspace. They do this from
+the same admin panel, scoped to the workspaces they administer.
+
+**Platform superadmins** are the global operators: they create and delete
+workspaces (each with its own concurrent-VM cap), appoint admins, watch overall
+system health, and can act in or see across every workspace.
 
 ## What's in v1
 
-- Hack Club OIDC login + Slack-ID allowlist gate
+- Hack Club OIDC login + workspace-membership gate (ADR-0036)
 - Spawn a **Linux**, **Windows**, **Android**, or **macOS** desktop VM
   (ADR-0024 + ADR-0031):
   - Linux: Debian 12 + XFCE over RDP/xrdp
@@ -39,7 +47,8 @@ admin UI.
 - Embedded Guacamole iframe with auto-login token
 - Clipboard sync (in + out of VM)
 - 6-hour hard cap + 30-minute idle cap (browser heartbeat)
-- Per-reviewer cap of 2 active VMs
+- Per-reviewer cap of 2 active VMs, plus a per-workspace concurrent-VM cap set
+  by superadmins (ADR-0036)
 - Hack Club–themed UI built with Tailwind + FlyonUI, served from
   `payload.hackclub.com`
 
@@ -50,7 +59,6 @@ admin UI.
 - Custom Guacamole client (replacing iframe) — keep door open, build later
 - Project review workflow — just a blank cloned template for now
 - Queue when at limit — just reject with friendly error for v1
-- Admin UI — manage allowlist via YAML in repo for v1
 - Multi-region / HA Proxmox — single Proxmox cluster
 
 ## Constraints

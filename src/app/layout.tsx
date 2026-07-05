@@ -5,6 +5,7 @@ import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
 import AdminButton from "@/components/AdminButton";
 import CustomizeButton from "@/components/CustomizeButton";
+import YswsSwitcher from "@/components/YswsSwitcher";
 import { FlyonUIInit } from "@/components/FlyonUIInit";
 import { auth } from "@/auth";
 
@@ -36,8 +37,9 @@ export default async function RootLayout({
         <FlyonUIInit />
         {session?.user && (
           <nav className="bg-hc-dark border-b border-hc-darkless px-6 py-4 flex items-center justify-between shadow-sm">
-            <div className="flex items-center">
+            <div className="flex items-center gap-3">
                <Link className="text-2xl font-bold tracking-tight text-hc-red" href="/">Payload</Link>
+               <YswsSwitcher />
             </div>
              <div className="flex items-center gap-3">
                 <CustomizeButton />

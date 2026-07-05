@@ -1,38 +1,54 @@
-# Runbook: Update Reviewer Allowlist
+# Runbook: Manage workspace members and admins
 
-The reviewer seed data is in `scripts/seed.ts` (hardcoded Slack IDs).
+Since ADR-0036 access is managed in the **admin panel** (`/admin`), not by
+editing `scripts/seed.ts`. Membership is per workspace (YSWS), keyed by Slack ID
+so a person can be added before their first login.
 
-## Add a reviewer
+## Add or remove a reviewer (member)
 
-1. Edit `scripts/seed.ts` and add the Slack ID to the allowlist entries:
-   ```ts
-   { slackId: "U0123ABC" },
-   ```
-2. Open a PR and get a review.
-3. Merge and deploy.
-4. Run the seed script if deploy does not run it automatically:
-   ```bash
-   pnpm tsx scripts/seed.ts
-   ```
+1. Open `/admin` and pick the workspace from the selector.
+2. On the **Members** tab, type the Slack ID (e.g. `U0123ABC`) and click
+   "Add member". To remove, click the trash icon on their row.
 
-## Remove a reviewer
+A workspace admin or a superadmin can do this. Removing a member does not
+terminate their running VMs; terminate them from the **Sessions** tab if needed.
 
-1. Delete the entry from `scripts/seed.ts`.
-2. Open PR, merge, and deploy.
-3. Terminate any active sessions directly:
-   ```bash
-   pnpm payload sessions:terminate-user U0123ABC --reason admin
-   ```
+## Promote or demote a workspace admin
 
-## Emergency revoke
+On the **Members** tab, use the shield button on a member's row to promote them
+to admin or demote them back. Workspace admins and superadmins may do this.
 
-If a deploy is too slow:
+## Create or cap a workspace (superadmin)
 
-```bash
-# Manually delete from DB (the table uses slack_id as PK):
-# DELETE FROM reviewer_allowlist_entries WHERE slack_id = 'U0123ABC';
-pnpm payload sessions:terminate-user U0123ABC --reason admin
+On the **Workspaces** tab (superadmin only): create a workspace with a slug,
+name, and optional concurrent-VM cap; edit the cap inline; toggle enabled; or
+delete it. A blank cap means unlimited. Over-cap launches are rejected with a
+"no capacity in your workspace" error.
+
+## Superadmins
+
+Once you have one superadmin, manage the rest from the **Superadmins** tab in
+`/admin` (superadmin only): add or revoke by Slack ID. You cannot revoke your
+own, to avoid locking the platform out.
+
+## Bootstrap / disaster recovery
+
+The first superadmin has to be granted out-of-band, since only a superadmin can
+appoint others. `scripts/seed.ts` seeds the first one and the "Legacy"
+workspace. To grant emergency superadmin access directly in the DB:
+
+```sql
+INSERT INTO platform_superadmins (slack_id) VALUES ('U0123ABC')
+  ON CONFLICT DO NOTHING;
 ```
 
-Then remove the reviewer from `scripts/seed.ts` so the next deploy does not
-re-add the entry.
+To emergency-revoke a member and kill their VMs:
+
+```sql
+-- Remove from a workspace (repeat per workspace, or delete all their rows):
+DELETE FROM ysws_memberships WHERE slack_id = 'U0123ABC';
+```
+
+```bash
+pnpm payload sessions:terminate-user U0123ABC --reason admin
+```

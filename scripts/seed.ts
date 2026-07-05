@@ -1,23 +1,30 @@
 import "dotenv/config";
 import { db } from "../src/db";
 import { vmTypeSeeds } from "../src/config/vm-types";
-import { reviewerAllowlistEntries, vmTypes, adminEntries } from "../src/db/schema";
+import { vmTypes, ysws, yswsMemberships, platformSuperadmins } from "../src/db/schema";
+
+const SEED_SLACK_ID = "U084UQFF0LC";
+// Matches the Legacy workspace id created by migration 0011's data backfill, so
+// re-seeding after a migration stays idempotent (ADR-0036).
+const LEGACY_YSWS_ID = "00000000-0000-0000-0000-000000000001";
 
 async function main() {
-  console.log("Seeding allowlist...");
+  console.log("Seeding default workspace...");
   await db
-    .insert(reviewerAllowlistEntries)
-    .values({
-      slackId: "U084UQFF0LC",
-    })
+    .insert(ysws)
+    .values({ id: LEGACY_YSWS_ID, slug: "legacy", name: "Legacy" })
     .onConflictDoNothing();
 
-  console.log("Seeding admins...");
+  console.log("Seeding platform superadmin...");
   await db
-    .insert(adminEntries)
-    .values({
-      slackId: "U084UQFF0LC",
-    })
+    .insert(platformSuperadmins)
+    .values({ slackId: SEED_SLACK_ID })
+    .onConflictDoNothing();
+
+  console.log("Seeding workspace membership...");
+  await db
+    .insert(yswsMemberships)
+    .values({ yswsId: LEGACY_YSWS_ID, slackId: SEED_SLACK_ID, role: "admin" })
     .onConflictDoNothing();
 
   console.log("Seeding VM types...");

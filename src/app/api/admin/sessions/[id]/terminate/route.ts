@@ -26,6 +26,13 @@ export async function POST(
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
+  // A workspace admin may only terminate VMs in a workspace they administer.
+  // Superadmins may terminate anything, including the ownerless warm pool
+  // (ADR-0036).
+  if (!admin.isSuperadmin && (!session.yswsId || !admin.adminYswsIds.includes(session.yswsId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   if (["terminating", "terminated"].includes(session.state)) {
     return NextResponse.json({ error: "Session already terminated or terminating" }, { status: 409 });
   }

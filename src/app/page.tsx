@@ -1,6 +1,7 @@
 import { auth, signIn, signOut } from "@/auth";
 import { db } from "@/db";
-import { vmSessions, vmTypes, reviewerAllowlistEntries } from "@/db/schema";
+import { vmSessions, vmTypes } from "@/db/schema";
+import { getAccessContext } from "@/lib/access";
 import { eq, desc, sql } from "drizzle-orm";
 import Link from "next/link";
 import { vmTypeSeeds } from "@/config/vm-types";
@@ -122,16 +123,17 @@ export default async function Dashboard() {
     );
   }
 
-  const isAllowlisted = await db.query.reviewerAllowlistEntries.findFirst({
-    where: eq(reviewerAllowlistEntries.slackId, slackId),
-  });
+  const access = await getAccessContext();
 
-  if (!isAllowlisted) {
+  if (!access?.activeYsws) {
+    // A superadmin with no workspaces yet gets a build prompt instead of a
+    // dead-end denial: they are the one who creates workspaces (ADR-0036).
+    const superadminEmpty = !!access?.isSuperadmin;
     return (
       <div className="fixed inset-0 z-50 bg-hc-darker flex flex-col items-center justify-center px-4 py-8 animate-in fade-in duration-500 overflow-hidden">
         {/* Technical Blueprint/Radar Grid Background */}
-        <div 
-          className="absolute inset-0 pointer-events-none z-0" 
+        <div
+          className="absolute inset-0 pointer-events-none z-0"
           style={{
             backgroundImage: "linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)",
             backgroundSize: "32px 32px",
@@ -145,24 +147,36 @@ export default async function Dashboard() {
           <h1 className="text-5xl md:text-7xl font-black text-hc-snow uppercase tracking-tight drop-shadow-sm">
             Payload
           </h1>
-          
-          <div className="bg-hc-dark border border-hc-orange/50 rounded-hc p-8 max-w-xl shadow-lg w-full text-left">
-            <div className="flex flex-col gap-2">
-              <h3 className="text-xl font-bold text-hc-orange mb-1">Access Denied</h3>
-              <p className="text-hc-smoke">Your account is valid but your Slack ID (<code className="bg-hc-darker px-1.5 py-0.5 rounded border border-hc-darkless text-hc-cyan">{slackId}</code>) is not allowlisted to access this platform.</p>
-              <p className="text-sm text-hc-muted mt-1">
-                Please <a href={env.SLACK_REQUEST_URL} target="_blank" rel="noopener noreferrer" className="text-hc-cyan hover:underline decoration-hc-cyan/50 underline-offset-4 transition-all">request access in Slack</a> to be allowlisted.
-              </p>
-              <div className="mt-4 pt-4 border-t border-hc-darkless">
-                <form action={async () => { "use server"; await signOut(); }}>
-                  <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-2 px-4 rounded transition-colors text-sm w-full">Sign out</button>
-                </form>
+
+          {superadminEmpty ? (
+            <div className="bg-hc-dark border border-hc-cyan/50 rounded-hc p-8 max-w-xl shadow-lg w-full text-left">
+              <div className="flex flex-col gap-2">
+                <h3 className="text-xl font-bold text-hc-cyan mb-1">No workspaces yet</h3>
+                <p className="text-hc-smoke">You are a platform superadmin. Create your first workspace (YSWS) to start adding admins and reviewers.</p>
+                <div className="mt-4 pt-4 border-t border-hc-darkless">
+                  <Link href="/admin" className="inline-block bg-hc-red hover:bg-[#d82a41] text-white font-bold py-2 px-4 rounded transition-colors text-sm">Open Admin Panel</Link>
+                </div>
               </div>
             </div>
-          </div>
-          
+          ) : (
+            <div className="bg-hc-dark border border-hc-orange/50 rounded-hc p-8 max-w-xl shadow-lg w-full text-left">
+              <div className="flex flex-col gap-2">
+                <h3 className="text-xl font-bold text-hc-orange mb-1">Access Denied</h3>
+                <p className="text-hc-smoke">Your account is valid but your Slack ID (<code className="bg-hc-darker px-1.5 py-0.5 rounded border border-hc-darkless text-hc-cyan">{slackId}</code>) is not a member of any workspace on this platform.</p>
+                <p className="text-sm text-hc-muted mt-1">
+                  Ask your program organizer to add you, or <a href={env.SLACK_REQUEST_URL} target="_blank" rel="noopener noreferrer" className="text-hc-cyan hover:underline decoration-hc-cyan/50 underline-offset-4 transition-all">request access in Slack</a>.
+                </p>
+                <div className="mt-4 pt-4 border-t border-hc-darkless">
+                  <form action={async () => { "use server"; await signOut(); }}>
+                    <button className="bg-hc-darkless hover:bg-hc-slate text-hc-smoke border border-hc-slate/30 font-bold py-2 px-4 rounded transition-colors text-sm w-full">Sign out</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-16 text-center text-sm text-hc-muted/80 flex items-center justify-center gap-1.5">
-            Payload Beta &bull; Made with <svg className="w-4 h-4 text-hc-red inline-block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg> by Floppy 
+            Payload Beta &bull; Made with <svg className="w-4 h-4 text-hc-red inline-block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg> by Floppy
           </div>
         </div>
       </div>
@@ -197,7 +211,10 @@ export default async function Dashboard() {
       <DashboardLive sessions={watchedSessions} />
       <div className="mb-10">
         <h1 className="text-4xl font-bold mb-2 text-hc-snow">My Sessions</h1>
-        <p className="text-hc-muted text-lg">Your VMs for reviewing Hack Club projects.</p>
+        <p className="text-hc-muted text-lg">
+          Your VMs in <span className="text-hc-smoke font-semibold">{access.activeYsws.name}</span>.
+          {access.workspaces.length > 1 && " Switch workspaces from the menu up top."}
+        </p>
       </div>
 
       <section>

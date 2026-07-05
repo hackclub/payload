@@ -6,5 +6,5 @@ export default async function AdminPage() {
   const admin = await getAdminUser();
   if (!admin) redirect("/");
 
-  return <AdminDashboard />;
+  return <AdminDashboard isSuperadmin={admin.isSuperadmin} />;
 }

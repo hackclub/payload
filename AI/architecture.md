@@ -47,7 +47,7 @@ Browser (Reviewer)
 
 - Brain. Speaks to reviewers, Proxmox, Guacamole, Postgres, and Redis.
 - Uses App Router for UI routes and Route Handlers for API endpoints.
-- Handles Auth.js login, Slack-ID allowlist enforcement, VM CRUD, heartbeat
+- Handles Auth.js login, workspace-membership enforcement, VM CRUD, heartbeat
   ingest, server-sent events (Redis pub/sub fanout), and BullMQ job processing.
 - Runs as one Docker container for now. The BullMQ worker is started in-process
   during runtime, guarded so it does not start during builds or migrations.
@@ -90,9 +90,11 @@ Browser (Reviewer)
 ## Data flow: reviewer creates a VM
 
  1. Reviewer clicks "Launch" on a VM type.
- 2. Next.js server action checks: user in allowlist, user has
-    fewer than 2 active VMs, VM type enabled.
- 3. App inserts a `vm_sessions` row and enqueues a BullMQ `provision-vm` job.
+ 2. Next.js server action checks: user is a member of their active workspace,
+    user has fewer than 2 active VMs, the workspace is under its concurrent-VM
+    cap, VM type enabled (ADR-0036).
+ 3. App inserts a `vm_sessions` row (stamped with the active workspace) and
+    enqueues a BullMQ `provision-vm` job.
  4. Worker clones the template in Proxmox, starts it, reads the clone MAC from
     Proxmox config, and polls the Proxmox host neighbor table via SSH until the
     VM IP is known.
@@ -112,4 +114,5 @@ Browser (Reviewer)
 - v1 Linux uses a fixed operator-managed template credential. Per-session VM
   credentials should replace this before broader rollout.
 - Guacamole tokens are short-lived and bound to a one-shot Guacamole user.
-- Slack-ID allowlist is enforced server-side on every authenticated VM action.
+- Workspace membership is enforced server-side on every authenticated VM action,
+  and admin routes are scoped to the workspaces the caller administers (ADR-0036).

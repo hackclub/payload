@@ -1,26 +1,25 @@
-import { auth } from "@/auth";
-import { db } from "@/db";
-import { reviewerAllowlistEntries } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { getAccessContext, type AccessContext } from "@/lib/access";
 
-type UserWithSlackId = {
-  slackId?: string | null;
-};
-
+/**
+ * Gate for anything a reviewer does with VMs. A user may use Payload iff they
+ * belong to at least one enabled workspace, which means they have an active
+ * one resolved (ADR-0036, supersedes the flat allowlist of ADR-0005).
+ *
+ * Returns the resolved user plus their active workspace id, which callers stamp
+ * onto the VMs they create.
+ */
 export async function getAllowlistedUser() {
-  const session = await auth();
-  if (!session?.user) return null;
+  const ctx = await getAccessContext();
+  if (!ctx || !ctx.activeYsws) return null;
 
-  const slackId = (session.user as UserWithSlackId).slackId;
-  if (!slackId) return null;
-
-  const allowlistEntry = await db.query.reviewerAllowlistEntries.findFirst({
-    where: eq(reviewerAllowlistEntries.slackId, slackId),
-  });
-
-  if (!allowlistEntry) return null;
-
-  return { session, user: session.user, userId: session.user.id ?? "", slackId };
+  return {
+    userId: ctx.userId,
+    slackId: ctx.slackId,
+    activeYswsId: ctx.activeYsws.id,
+    ctx,
+  };
 }
 
 export type AllowlistedUser = NonNullable<Awaited<ReturnType<typeof getAllowlistedUser>>>;
+
+export type { AccessContext };
