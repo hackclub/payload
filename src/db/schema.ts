@@ -37,6 +37,9 @@ export const users = pgTable("user", {
   startupScriptWindowsRunAsAdmin: boolean("startup_script_windows_run_as_admin").notNull().default(true),
   startupScriptLinux: text("startup_script_linux"),
   startupScriptLinuxRunAsAdmin: boolean("startup_script_linux_run_as_admin").notNull().default(true),
+  // Set the first time the reviewer opens the customization page. Until then the
+  // "Customize" nav button is highlighted to help them discover the feature.
+  customizationSeenAt: timestamp("customization_seen_at", { withTimezone: true }),
 });
 
 export const accounts = pgTable(

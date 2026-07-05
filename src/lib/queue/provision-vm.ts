@@ -14,6 +14,7 @@ import {
   enqueueCustomizeVm,
 } from "@/lib/queue";
 import { ownedVmName, warmVmName } from "@/lib/vm-naming";
+import { guestOs } from "@/lib/guest/transfer";
 import { randomBytes } from "node:crypto";
 
 type ProvisionJobData = { sessionId: number };
@@ -349,16 +350,28 @@ async function runBindPhase(sessionId: number) {
     });
     publish({ type: "ready", state: "ready", sessionId, data: { ip: vmIp } });
 
-    // Kick background customization (wallpaper) if the owner saved one. Runs
+    // Kick background customization if the owner has anything to apply for this
+    // VM's OS — a custom wallpaper, package installs, or a startup script. Runs
     // entirely after `ready` so it never gates the reviewer's connection
     // (ADR-0034). Enqueue only when there's something to apply.
-    if (session.userId) {
+    const os = guestOs(vmType.slug); // null for android/macos (unsupported)
+    if (session.userId && os) {
       try {
         const owner = await db.query.users.findFirst({
           where: eq(users.id, session.userId),
-          columns: { wallpaperUpdatedAt: true },
+          columns: {
+            wallpaperUpdatedAt: true,
+            installPackagesWindows: true,
+            installPackagesLinux: true,
+            startupScriptWindows: true,
+            startupScriptLinux: true,
+          },
         });
-        if (owner?.wallpaperUpdatedAt) {
+        const packages = os === "windows" ? owner?.installPackagesWindows : owner?.installPackagesLinux;
+        const script = os === "windows" ? owner?.startupScriptWindows : owner?.startupScriptLinux;
+        const hasCustomization =
+          !!owner?.wallpaperUpdatedAt || (packages?.length ?? 0) > 0 || !!script?.trim();
+        if (hasCustomization) {
           await enqueueCustomizeVm({ sessionId });
         }
       } catch {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { vmSessions, users } from "@/db/schema";
-import { desc, inArray } from "drizzle-orm";
+import { desc, inArray, sql } from "drizzle-orm";
 import { getAdminUser } from "@/lib/admin-guard";
 import { getCachetProfile, cachetAvatarUrl } from "@/lib/cachet";
 
@@ -9,8 +9,13 @@ export async function GET() {
   const admin = await getAdminUser();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Sort by when a session was actually claimed/used, falling back to created_at
+  // for still-warm/cold rows. A claimed warm VM keeps the created_at from when it
+  // was cloned into the pool, so ordering purely by created_at buries a
+  // recently-used session (claimed from an older warm VM) under newer warm-pool
+  // churn — pushing it past the 100-row limit and making it look like it's gone.
   const allSessions = await db.query.vmSessions.findMany({
-    orderBy: desc(vmSessions.createdAt),
+    orderBy: desc(sql`coalesce(${vmSessions.claimedAt}, ${vmSessions.createdAt})`),
     with: { vmType: true },
     limit: 100,
   });

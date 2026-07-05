@@ -5,7 +5,6 @@ import { createProxmoxClient, getProxmoxConfig } from "@/lib/proxmox/config";
 import { guestOs } from "@/lib/guest/transfer";
 import { ensureSpool, notify } from "@/lib/guest/spool";
 import { applyWallpaper } from "@/lib/wallpaper";
-import { getDefaultWallpaper } from "@/lib/wallpaper/default";
 import { installPackages, sanitizePackages } from "@/lib/installs";
 import { runStartupScript } from "@/lib/scripts";
 
@@ -48,20 +47,22 @@ export async function processCustomizeVm(jobData: CustomizeJobData) {
   const results: boolean[] = [];
 
   // Wallpaper first — it just drops a spool task (fast) and repaints promptly.
-  // Reviewers who haven't uploaded one still get the branded Hack Club default,
-  // so every VM looks like Payload out of the box.
-  results.push(
-    await step(sessionId, "wallpaper_applied", "wallpaper_failed", async () =>
-      applyWallpaper({
-        proxmox,
-        node,
-        vmid,
-        os,
-        sessionId,
-        image: wallpaper ? Buffer.from(wallpaper) : await getDefaultWallpaper(),
-      }),
-    ),
-  );
+  // Only applied when the reviewer uploaded their own; otherwise we leave the
+  // template's baked-in wallpaper untouched.
+  if (wallpaper) {
+    results.push(
+      await step(sessionId, "wallpaper_applied", "wallpaper_failed", async () =>
+        applyWallpaper({
+          proxmox,
+          node,
+          vmid,
+          os,
+          sessionId,
+          image: Buffer.from(wallpaper),
+        }),
+      ),
+    );
+  }
 
   if (packages.length > 0) {
     results.push(

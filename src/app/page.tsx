@@ -1,7 +1,7 @@
 import { auth, signIn, signOut } from "@/auth";
 import { db } from "@/db";
 import { vmSessions, vmTypes, reviewerAllowlistEntries } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import Link from "next/link";
 import { vmTypeSeeds } from "@/config/vm-types";
 import DashboardLive from "./DashboardLive";
@@ -171,7 +171,11 @@ export default async function Dashboard() {
 
   const userSessions = await db.query.vmSessions.findMany({
     where: eq(vmSessions.userId, session.user.id!),
-    orderBy: (vmSessions, { desc }) => [desc(vmSessions.createdAt)],
+    // Sort by actual claim/use time (claimed_at), not the warm VM's clone time
+    // (created_at) — otherwise a session claimed from a long-idle warm VM shows
+    // up as "old" and sinks below more recently-created ones. Falls back to
+    // created_at for cold/never-claimed rows.
+    orderBy: [desc(sql`coalesce(${vmSessions.claimedAt}, ${vmSessions.createdAt})`)],
     with: { vmType: true },
   });
 

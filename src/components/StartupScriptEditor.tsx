@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
+import OsToggle, { type Os } from "@/components/OsToggle";
+import SaveStatusIndicator from "@/components/SaveStatusIndicator";
+import { useAutosave } from "@/lib/useAutosave";
 
-type Os = "windows" | "linux";
 type ScriptState = { script: string; runAsAdmin: boolean };
 type Initial = Record<Os, ScriptState>;
 
-const OS_LABEL: Record<Os, string> = { windows: "Windows", linux: "Linux" };
 const PLACEHOLDER: Record<Os, string> = {
   windows: "# PowerShell — runs on every Windows VM you start\nWrite-Host 'hello'",
   linux: "#!/bin/bash\n# Bash — runs on every Linux VM you start\necho hello",
@@ -15,59 +16,39 @@ const PLACEHOLDER: Record<Os, string> = {
 export default function StartupScriptEditor({ initial }: { initial: Initial }) {
   const [os, setOs] = useState<Os>("windows");
   const [state, setState] = useState<Initial>(initial);
-  const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { status, schedule, saveNow, retry } = useAutosave();
 
   const current = state[os];
 
-  function patch(next: Partial<ScriptState>) {
-    setState((s) => ({ ...s, [os]: { ...s[os], ...next } }));
-    setSaved(false);
+  function saver(o: Os, s: ScriptState) {
+    return () =>
+      fetch("/api/customization/startup-script", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ os: o, script: s.script, runAsAdmin: s.runAsAdmin }),
+      });
+  }
+
+  /** Update the current OS's script state, then autosave it. */
+  function patch(next: Partial<ScriptState>, immediate = false) {
+    const merged = { ...state[os], ...next };
+    setState((s) => ({ ...s, [os]: merged }));
+    const save = saver(os, merged);
+    if (immediate) saveNow(save);
+    else schedule(save);
   }
 
   async function loadFile(file: File) {
     const text = await file.text();
-    patch({ script: text });
-  }
-
-  async function save() {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/customization/startup-script", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ os, script: current.script, runAsAdmin: current.runAsAdmin }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Could not save");
-      }
-      setSaved(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save");
-    } finally {
-      setBusy(false);
-    }
+    patch({ script: text }, true);
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        {(["windows", "linux"] as Os[]).map((o) => (
-          <button
-            key={o}
-            type="button"
-            onClick={() => { setOs(o); setError(null); }}
-            className={`px-4 py-1.5 rounded-hc text-sm font-bold transition-colors ${
-              os === o ? "bg-hc-cyan text-hc-darker" : "bg-hc-darkless text-hc-smoke hover:bg-hc-slate/30"
-            }`}
-          >
-            {OS_LABEL[o]}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <OsToggle os={os} onChange={setOs} />
+        <SaveStatusIndicator status={status} onRetry={retry} />
       </div>
 
       <textarea
@@ -103,30 +84,16 @@ export default function StartupScriptEditor({ initial }: { initial: Initial }) {
           <input
             type="checkbox"
             checked={current.runAsAdmin}
-            onChange={(e) => patch({ runAsAdmin: e.target.checked })}
+            onChange={(e) => patch({ runAsAdmin: e.target.checked }, true)}
             className="accent-hc-cyan"
           />
           Run as administrator (system)
         </label>
         <span className="text-hc-muted text-xs">
           {current.runAsAdmin
-            ? "Full privileges, runs before you connect."
+            ? "Full privileges"
             : "Runs inside your desktop session (can open apps)."}
         </span>
-      </div>
-
-      {error && <p className="text-hc-red text-sm">{error}</p>}
-
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void save()}
-          className="bg-hc-red hover:bg-[#d82a41] disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-hc transition-colors"
-        >
-          Save {OS_LABEL[os]} script
-        </button>
-        {saved && <span className="text-hc-cyan text-sm">Saved ✓</span>}
       </div>
     </div>
   );
