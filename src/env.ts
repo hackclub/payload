@@ -82,6 +82,15 @@ const envSchema = z.object({
   // claim. Only matters under contention — warm VMs still use idle CPU freely.
   WARM_CPU_UNITS: z.coerce.number().int().positive().default(8),
   ACTIVE_CPU_UNITS: z.coerce.number().int().positive().default(100),
+
+  // AI repo setup (ai.hackclub.com, OpenAI-compatible proxy). AI_API_KEY unset
+  // disables the feature entirely — the repo-review form is hidden and no jobs
+  // are enqueued.
+  AI_BASE_URL: z.string().url().default("https://ai.hackclub.com/proxy/v1"),
+  AI_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().min(1).default("z-ai/glm-5.2"),
+  // Reject cloned repos larger than this (checkout size, not history).
+  REPO_MAX_CLONE_MB: z.coerce.number().int().positive().default(200),
 });
 
 const parsed = envSchema.safeParse(process.env);

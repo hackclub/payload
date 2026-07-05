@@ -91,6 +91,38 @@ export async function enqueueCustomizeVm(data: CustomizeVmJobData) {
   });
 }
 
+export type AnalyzeRepoJobData = { setupId: number };
+export type RunSetupJobData = { setupId: number };
+
+/**
+ * AI phase of "Review a Repo": analyze the repo and, on success, launch the
+ * VM (sequential — the VM boots only after the AI is done). No retries: LLM
+ * runs are expensive and the user can resubmit the URL.
+ */
+export async function enqueueAnalyzeRepo(data: AnalyzeRepoJobData) {
+  return vmQueue.add("analyze-repo", data, {
+    attempts: 1,
+    jobId: `analyze-repo-${data.setupId}`,
+    removeOnComplete: true,
+    removeOnFail: 1000,
+  });
+}
+
+/**
+ * Execution phase of "Review a Repo": deliver + visibly run the generated
+ * setup on the ready VM. Enqueued from bind completion AND from the analyze
+ * job's tail (whichever observes both halves ready) — the jobId dedups.
+ */
+export async function enqueueRunSetup(data: RunSetupJobData) {
+  return vmQueue.add("run-setup", data, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 5_000 },
+    jobId: `run-setup-${data.setupId}`,
+    removeOnComplete: true,
+    removeOnFail: 1000,
+  });
+}
+
 export async function enqueueTerminateVm(data: TerminateVmJobData) {
   return vmQueue.add("terminate-vm", data, {
     attempts: 3,

@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { vmSessions, vmSessionEvents, vmTypes, users } from "@/db/schema";
+import { vmSessions, vmSessionEvents, vmTypes, users, repoSetups } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { createProxmoxClient, getProxmoxConfig } from "@/lib/proxmox/config";
 import { discoverIpFromProxmoxNeighborTable } from "@/lib/proxmox/ip-discovery";
@@ -12,6 +12,7 @@ import {
   WARM_CPU_UNITS,
   ACTIVE_CPU_UNITS,
   enqueueCustomizeVm,
+  enqueueRunSetup,
 } from "@/lib/queue";
 import { ownedVmName, warmVmName } from "@/lib/vm-naming";
 import { guestOs } from "@/lib/guest/transfer";
@@ -376,6 +377,23 @@ async function runBindPhase(sessionId: number) {
         }
       } catch {
         // Best-effort — never fail a bind because customization couldn't be queued.
+      }
+    }
+
+    // "Review a Repo" (sequential AI-first flow): if this session was created
+    // by an analyze-repo job, its setup artifacts already exist — run them now
+    // that the VM is ready. The analyze job also tries this from its side
+    // (covers the stamp-vs-bind race); the run-setup jobId dedups.
+    if (session.userId && os === "linux") {
+      try {
+        const setup = await db.query.repoSetups.findFirst({
+          where: eq(repoSetups.vmSessionId, sessionId),
+        });
+        if (setup && setup.status === "analyzed") {
+          await enqueueRunSetup({ setupId: setup.id });
+        }
+      } catch {
+        // Best-effort — never fail a bind because the setup couldn't be queued.
       }
     }
 

@@ -1,6 +1,6 @@
 import { auth, signIn, signOut } from "@/auth";
 import { db } from "@/db";
-import { vmSessions, vmTypes } from "@/db/schema";
+import { vmSessions, vmTypes, repoSetups } from "@/db/schema";
 import { getAccessContext } from "@/lib/access";
 import { eq, desc, sql } from "drizzle-orm";
 import Link from "next/link";
@@ -9,6 +9,8 @@ import DashboardLive from "./DashboardLive";
 import { env } from "@/env";
 import OnboardingModal from "@/components/OnboardingModal";
 import LaunchVmForm from "@/components/LaunchVmForm";
+import RepoReviewForm from "@/components/RepoReviewForm";
+import RepoSetupsPanel, { type RepoSetupView } from "@/components/RepoSetupsPanel";
 import { destroySession } from "./page-actions";
 
 type UserWithSlackId = {
@@ -201,6 +203,28 @@ export default async function Dashboard() {
     where: eq(vmTypes.enabled, true),
   });
 
+  // "Review a Repo" (AI setup): shown only when the AI is configured and a
+  // Linux VM type exists to run the result on. Done rows older than a day are
+  // hidden (the session card is the interesting thing by then); failed rows
+  // stick around until dismissed.
+  const aiSetupAvailable = !!env.AI_API_KEY && enabledVmTypes.some((t) => t.slug === "linux");
+  const userRepoSetups: RepoSetupView[] = aiSetupAvailable
+    ? (
+        await db.query.repoSetups.findMany({
+          where: sql`${repoSetups.userId} = ${session.user.id!} AND (${repoSetups.status} != 'done' OR ${repoSetups.updatedAt} > now() - interval '1 day')`,
+          orderBy: [desc(repoSetups.createdAt)],
+          limit: 10,
+        })
+      )
+        .map((s) => ({
+          id: s.id,
+          repoUrl: s.repoUrl,
+          status: s.status,
+          error: s.error,
+          vmSessionId: s.vmSessionId,
+        }))
+    : [];
+
   const watchedSessions = userSessions
     .filter((s) => s.state !== "terminated" && s.state !== "errored")
     .map((s) => ({ id: s.id, state: s.state }));
@@ -209,6 +233,22 @@ export default async function Dashboard() {
     <div className="space-y-12 animate-in fade-in duration-500">
       <OnboardingModal />
       <DashboardLive sessions={watchedSessions} />
+      {aiSetupAvailable && (
+        <div className="space-y-4">
+          <RepoReviewForm
+            disabledReason={
+              activeSessions.length +
+                userRepoSetups.filter((s) => ["pending", "analyzing", "analyzed"].includes(s.status))
+                  .length >=
+              env.MAX_SESSIONS_PER_USER
+                ? `You're at your limit of ${env.MAX_SESSIONS_PER_USER} active VMs — terminate a session to use AI review.`
+                : null
+            }
+          />
+          <RepoSetupsPanel setups={userRepoSetups} />
+        </div>
+      )}
+
       <div className="mb-10">
         <h1 className="text-4xl font-bold mb-2 text-hc-snow">My Sessions</h1>
         <p className="text-hc-muted text-lg">

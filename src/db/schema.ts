@@ -218,6 +218,59 @@ export const vmSessions = pgTable(
   }),
 );
 
+// AI-assisted project setup ("Review a Repo"). One row per pasted repo URL.
+// Strictly sequential lifecycle: the AI analyzes first (pending → analyzing →
+// analyzed), and only then is a Linux VM session created and linked; the
+// setup script then runs on it (running → done/failed). Failure at any stage
+// parks the row at `failed` with `error` set — and, before `analyzed`, boots
+// no VM at all.
+export const repoSetupStatus = pgEnum("repo_setup_status", [
+  "pending",
+  "analyzing",
+  "analyzed",
+  "running",
+  "done",
+  "failed",
+]);
+
+export const repoSetups = pgTable(
+  "repo_setups",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Workspace the eventual VM will be launched in (captured at submit time).
+    // set null on workspace delete so the audit row survives.
+    yswsId: text("ysws_id").references(() => ysws.id, { onDelete: "set null" }),
+    // Linked only after analysis succeeds — no session exists during the AI phase.
+    vmSessionId: integer("vm_session_id").references(() => vmSessions.id, { onDelete: "set null" }),
+    repoUrl: text("repo_url").notNull(),
+    status: repoSetupStatus("status").notNull().default("pending"),
+    // AI artifacts, saved before the VM is launched.
+    setupScript: text("setup_script"),
+    reviewerGuide: text("reviewer_guide"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userStatusIdx: index("repo_setups_user_status_idx").on(table.userId, table.status),
+    vmSessionIdx: uniqueIndex("repo_setups_vm_session_idx").on(table.vmSessionId),
+  }),
+);
+
+export const repoSetupsRelations = relations(repoSetups, ({ one }) => ({
+  user: one(users, {
+    fields: [repoSetups.userId],
+    references: [users.id],
+  }),
+  vmSession: one(vmSessions, {
+    fields: [repoSetups.vmSessionId],
+    references: [vmSessions.id],
+  }),
+}));
+
 export const vmSessionEvents = pgTable("vm_session_events", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   vmSessionId: integer("vm_session_id")

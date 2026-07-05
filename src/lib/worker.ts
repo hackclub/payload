@@ -3,6 +3,8 @@ import { redis } from "@/lib/redis";
 import { vmQueue } from "@/lib/queue";
 import { processProvisionVm, processWarmVm, processBindVm } from "@/lib/queue/provision-vm";
 import { processCustomizeVm } from "@/lib/queue/customize-vm";
+import { processAnalyzeRepo } from "@/lib/queue/analyze-repo";
+import { processRunSetup } from "@/lib/queue/run-setup";
 import { processTerminateVm } from "@/lib/queue/terminate-vm";
 import { processReapVmSessions } from "@/lib/queue/reap-vm-sessions";
 import { processReconcilePool } from "@/lib/queue/reconcile-pool";
@@ -27,6 +29,12 @@ export function startWorker() {
           break;
         case "customize-vm":
           await processCustomizeVm(job.data);
+          break;
+        case "analyze-repo":
+          await processAnalyzeRepo(job.data);
+          break;
+        case "run-setup":
+          await processRunSetup(job.data);
           break;
         case "terminate-vm":
           await processTerminateVm(job.data);
