@@ -40,7 +40,7 @@ export type CustomizeVmJobData = {
 
 export type TerminateVmJobData = {
   sessionId: number;
-  reason: "ttl" | "idle" | "user" | "error" | "admin" | "stuck" | "warm_recycle" | "orphan";
+  reason: "ttl" | "idle" | "user" | "error" | "admin" | "stuck" | "warm_recycle" | "orphan" | "shutdown";
 };
 
 export async function enqueueProvisionVm(data: ProvisionVmJobData) {

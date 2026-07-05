@@ -66,12 +66,17 @@ export async function processReapVmSessions() {
     await enqueueTerminateVm({ sessionId: row.id, reason: "stuck" });
   }
 
-  // Orphan sweep: destroy any payload-* Proxmox VM with no live session row
-  // (prevents pool/termination bugs from leaking VMs, ADR-0033).
-  await sweepOrphanVms();
+  // Proxmox sweep: orphan cleanup + in-guest shutdown detection, both driven
+  // off a single VM listing (which includes power status).
+  await sweepProxmoxVms();
 }
 
-async function sweepOrphanVms() {
+// A running session in one of these states means the VM is expected to be
+// powered on. If Proxmox reports it "stopped", the guest was shut down from
+// inside the OS (or crashed) — we treat that exactly like a user destroy.
+const RUNNING_STATES: VmSessionState[] = ["ready", "active"];
+
+async function sweepProxmoxVms() {
   const config = getProxmoxConfig();
   const proxmox = createProxmoxClient(config);
 
@@ -88,7 +93,7 @@ async function sweepOrphanVms() {
   if (payloadVms.length === 0) return;
 
   const backed = await db
-    .select({ vmid: vmSessions.proxmoxVmid })
+    .select({ id: vmSessions.id, vmid: vmSessions.proxmoxVmid, state: vmSessions.state })
     .from(vmSessions)
     .where(
       and(
@@ -97,21 +102,34 @@ async function sweepOrphanVms() {
         inArray(vmSessions.state, VM_BACKED_STATES),
       ),
     );
-  const backedVmids = new Set(backed.map((r) => r.vmid));
+  const backedByVmid = new Map(backed.map((r) => [r.vmid, r]));
 
   for (const vm of payloadVms) {
-    if (backedVmids.has(vm.vmid)) continue;
-    try {
-      await proxmox.stopVm(config.defaultNode, vm.vmid);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    } catch {
-      // may already be stopped
+    const session = backedByVmid.get(vm.vmid);
+
+    // Orphan: no live session row backs this VM — stop + purge it.
+    if (!session) {
+      try {
+        await proxmox.stopVm(config.defaultNode, vm.vmid);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } catch {
+        // may already be stopped
+      }
+      try {
+        await proxmox.deleteVm(config.defaultNode, vm.vmid);
+        console.log(`Reaped orphan VM ${vm.vmid} (${vm.name})`);
+      } catch {
+        // may already be gone
+      }
+      continue;
     }
-    try {
-      await proxmox.deleteVm(config.defaultNode, vm.vmid);
-      console.log(`Reaped orphan VM ${vm.vmid} (${vm.name})`);
-    } catch {
-      // may already be gone
+
+    // In-guest shutdown: a session that should be running but whose VM is
+    // powered off. Terminate it like a destroy (the terminate job is a no-op
+    // if it's already terminating/terminated, so re-enqueueing is safe).
+    if (RUNNING_STATES.includes(session.state) && vm.status === "stopped") {
+      console.log(`Session ${session.id} VM ${vm.vmid} powered off in-guest; terminating`);
+      await enqueueTerminateVm({ sessionId: session.id, reason: "shutdown" });
     }
   }
 }
