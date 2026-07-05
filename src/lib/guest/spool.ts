@@ -12,7 +12,8 @@ const SPOOL = {
 /** A task the companion agent runs in the user session. Mirrors agent protocol.rs. */
 export type SpoolTask =
   | { v: 1; id: string; type: "wallpaper"; payload_file: string }
-  | { v: 1; id: string; type: "run-script"; payload_file: string; interpreter: "bash" | "powershell" };
+  | { v: 1; id: string; type: "run-script"; payload_file: string; interpreter: "bash" | "powershell" }
+  | { v: 1; id: string; type: "notify"; title: string; body: string };
 
 function spoolFile(os: GuestOs, name: string): string {
   return os === "windows" ? `${SPOOL.windows}\\${name}` : `${SPOOL.linux}/${name}`;
@@ -55,6 +56,23 @@ export async function writeSpoolPayload(
   data: Buffer,
 ): Promise<void> {
   await writeGuestFile({ proxmox, node, vmid, os, destPath: spoolFile(os, name), data });
+}
+
+/**
+ * Show an in-session notification via the companion (a desktop notification on
+ * Linux, a message on Windows). Best-effort UX only; the spool must already
+ * exist (call `ensureSpool` once first).
+ */
+export async function notify(
+  proxmox: ProxmoxClient,
+  node: string,
+  vmid: number,
+  os: GuestOs,
+  id: string,
+  title: string,
+  body: string,
+): Promise<void> {
+  await dropTask(proxmox, node, vmid, os, { v: 1, id, type: "notify", title, body });
 }
 
 /**

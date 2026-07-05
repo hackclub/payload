@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 
-const POLL_INTERVAL: Duration = Duration::from_millis(1000);
+const POLL_INTERVAL: Duration = Duration::from_millis(400);
 
 fn main() {
     let spool = spool_dir();

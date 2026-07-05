@@ -41,9 +41,22 @@ cargo xwin build --release --target x86_64-pc-windows-msvc
 `target/` and the binaries are gitignored; only source is committed. Bake the
 compiled binaries into templates out-of-band.
 
+## Task types
+
+- `wallpaper` — set the desktop wallpaper live (copies the image to a stable
+  path first, so self-cleaning the spool doesn't dangle the reference).
+- `run-script` — run a reviewer script in the session.
+- `notify` — show an in-session notification (`notify-send` / `msg`), used for
+  install progress.
+
 ## Autostart (baked into templates)
 
-- **Windows** — a shortcut to the exe in the `shipwrights` Startup folder
-  (`shell:startup`), so it launches in-session at logon.
-- **Linux** — `~/.config/autostart/payload-agent.desktop` for `shipwrights`, so
-  it starts with the XFCE session (has DISPLAY/DBUS).
+Launch as early as possible so customizations apply promptly — the agent waits
+for the desktop to be ready before touching the wallpaper, so early launch is
+safe.
+
+- **Windows** — an **ONLOGON scheduled task** (not the Startup folder, which
+  imposes Windows' ~10s startup delay):
+  `schtasks /create /tn payload-agent /tr "C:\ProgramData\payload\payload-agent.exe" /sc ONLOGON /ru shipwrights /it /f`
+- **Linux** — `~/.xsessionrc` (`payload-agent &`), sourced before the WM starts.
+  XDG autostart (`~/.config/autostart`) also works but launches later.

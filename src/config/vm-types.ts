@@ -4,7 +4,7 @@ export const vmTypeSeeds = [
     {
         slug: "linux",
         displayName: "Debian XFCE",
-        proxmoxTemplateVmid: 67007,
+        proxmoxTemplateVmid: 67013,
         proxmoxNode: env.PROXMOX_DEFAULT_NODE,
         protocol: "rdp",
         defaultPort: 3389,
@@ -22,7 +22,7 @@ export const vmTypeSeeds = [
     {
         slug: "windows",
         displayName: "Windows 11",
-        proxmoxTemplateVmid: 67006,
+        proxmoxTemplateVmid: 67012,
         proxmoxNode: env.PROXMOX_DEFAULT_NODE,
         protocol: "rdp",
         defaultPort: 3389,

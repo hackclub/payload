@@ -24,6 +24,7 @@ pub struct Task {
 pub enum TaskKind {
     Wallpaper { payload_file: String },
     RunScript { payload_file: String, interpreter: Interpreter },
+    Notify { title: String, body: String },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

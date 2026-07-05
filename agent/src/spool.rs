@@ -76,6 +76,7 @@ impl crate::protocol::TaskKind {
         use crate::protocol::TaskKind::*;
         match self {
             Wallpaper { payload_file } | RunScript { payload_file, .. } => vec![PathBuf::from(payload_file)],
+            Notify { .. } => vec![],
         }
     }
 }

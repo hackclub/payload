@@ -55,7 +55,14 @@ Task JSON (mirrors `agent/src/protocol.rs` and `src/lib/guest/spool.ts`):
 ```jsonc
 { "v": 1, "id": "wallpaper-42", "type": "wallpaper", "payload_file": "wp-42.jpg" }
 { "v": 1, "id": "script-42", "type": "run-script", "payload_file": "startup-42.sh", "interpreter": "bash" }
+{ "v": 1, "id": "notify-42-install-start", "type": "notify", "title": "Installing programs", "body": "..." }
 ```
+
+The `notify` task shows an in-session notification (`notify-send` on Linux,
+`msg` on Windows) — used to surface progress for the SYSTEM-side install step,
+which is otherwise invisible to the reviewer. On Linux the wallpaper handler
+waits (bounded) for the XFCE desktop to be ready, so the agent can be launched
+early in the session (`~/.xsessionrc`) without one-shot failing.
 
 ## Data model (`user`)
 

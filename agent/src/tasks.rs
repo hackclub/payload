@@ -12,7 +12,15 @@ pub fn run(spool: &Path, kind: &TaskKind) -> Result<(), String> {
             if !img.exists() {
                 return Err(format!("wallpaper payload missing: {payload_file}"));
             }
-            set_wallpaper(&img)
+            // Copy to a stable path (spool's parent, e.g. .../payload/wallpaper.jpg)
+            // and point the OS at that — the spool payload is deleted after this
+            // task, and a dangling reference would black the desktop on reload.
+            let stable = spool.parent().unwrap_or(spool).join("wallpaper.jpg");
+            if let Some(parent) = stable.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            std::fs::copy(&img, &stable).map_err(|e| format!("copy wallpaper failed: {e}"))?;
+            set_wallpaper(&stable)
         }
         TaskKind::RunScript { payload_file, interpreter } => {
             let script = spool.join(payload_file);
@@ -21,6 +29,7 @@ pub fn run(spool: &Path, kind: &TaskKind) -> Result<(), String> {
             }
             run_script(&script, *interpreter)
         }
+        TaskKind::Notify { title, body } => notify(title, body),
     }
 }
 
@@ -58,6 +67,13 @@ fn run_script(script: &Path, interpreter: Interpreter) -> Result<(), String> {
     }
 }
 
+#[cfg(windows)]
+fn notify(title: &str, body: &str) -> Result<(), String> {
+    // A lightweight in-session message that auto-dismisses. No extra deps.
+    let text = if title.is_empty() { body.to_string() } else { format!("{title}\n\n{body}") };
+    no_window("msg", &["*", "/time:8", text.as_str()])
+}
+
 /// Spawn a console program without flashing a window (this binary is
 /// GUI-subsystem). CREATE_NO_WINDOW = 0x08000000.
 #[cfg(windows)]
@@ -75,23 +91,36 @@ fn no_window(exe: &str, args: &[&str]) -> Result<(), String> {
 #[cfg(unix)]
 fn set_wallpaper(img: &Path) -> Result<(), String> {
     use std::process::Command;
+    use std::thread::sleep;
+    use std::time::Duration;
 
     let path = img.to_string_lossy().to_string();
 
-    let list = Command::new("xfconf-query")
-        .args(["-c", "xfce4-desktop", "-l"])
-        .output()
-        .map_err(|e| format!("xfconf-query -l failed: {e}"))?;
-    if !list.status.success() {
-        return Err("xfconf-query -l returned non-zero".into());
+    // Wait for the XFCE desktop to be up (xfconf reachable + last-image props
+    // exist). Lets the agent be launched early in the session without failing;
+    // it applies the moment the desktop is ready, minimizing the black window.
+    let mut image_props: Vec<String> = Vec::new();
+    for _ in 0..60 {
+        if let Ok(out) = Command::new("xfconf-query").args(["-c", "xfce4-desktop", "-l"]).output() {
+            if out.status.success() {
+                image_props = String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .map(str::trim)
+                    .filter(|p| p.ends_with("last-image"))
+                    .map(str::to_string)
+                    .collect();
+                if !image_props.is_empty() {
+                    break;
+                }
+            }
+        }
+        sleep(Duration::from_millis(500));
     }
-    let props = String::from_utf8_lossy(&list.stdout);
-    let image_props: Vec<&str> = props.lines().map(str::trim).filter(|p| p.ends_with("last-image")).collect();
     if image_props.is_empty() {
-        return Err("no xfce4-desktop last-image properties found".into());
+        return Err("xfce4-desktop last-image properties not available".into());
     }
 
-    for prop in image_props {
+    for prop in &image_props {
         let _ = Command::new("xfconf-query").args(["-c", "xfce4-desktop", "-p", prop, "-s", &path]).status();
         let base = prop.trim_end_matches("last-image");
         let _ = Command::new("xfconf-query").args(["-c", "xfce4-desktop", "-p", &format!("{base}image-style"), "-s", "5"]).status();
@@ -116,4 +145,14 @@ fn run_script(script: &Path, interpreter: Interpreter) -> Result<(), String> {
         .status()
         .map_err(|e| format!("spawn {exe} failed: {e}"))?;
     if status.success() { Ok(()) } else { Err(format!("{exe} exited with {status}")) }
+}
+
+#[cfg(unix)]
+fn notify(title: &str, body: &str) -> Result<(), String> {
+    use std::process::Command;
+    let status = Command::new("notify-send")
+        .args(["-a", "Payload", "-t", "8000", title, body])
+        .status()
+        .map_err(|e| format!("notify-send failed: {e}"))?;
+    if status.success() { Ok(()) } else { Err(format!("notify-send exited with {status}")) }
 }
