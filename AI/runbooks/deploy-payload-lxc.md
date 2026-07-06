@@ -300,6 +300,7 @@ re-run `pnpm db:seed`.
 ## 9. Build and start the app container
 
 ```bash
+GIT_SHA=$(git rev-parse --short HEAD) \
 docker compose -f docker-compose.prod.yml --env-file .env.production \
   build app
 
@@ -439,6 +440,7 @@ cd /opt/payload
 git pull
 pnpm install --frozen-lockfile          # only if package.json changed
 pnpm db:migrate                         # only if drizzle/ changed
+GIT_SHA=$(git rev-parse --short HEAD) \
 docker compose -f docker-compose.prod.yml --env-file .env.production \
   build app
 docker compose -f docker-compose.prod.yml --env-file .env.production \

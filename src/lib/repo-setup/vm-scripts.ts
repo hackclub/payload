@@ -110,8 +110,7 @@ else
   printf '\\033[1;31m✘ Setup failed (exit %s).\\033[0m Full log: ${LOG_PATH}\\n' "$code"
   printf 'The VM is still usable — you can finish the setup manually.\\n'
 fi
-echo
-read -rp 'Press Enter to close this window… '
+printf '\\nThis window stays open so you can read the output — close it whenever you like.\\n'
 `;
 }
 
@@ -123,7 +122,7 @@ read -rp 'Press Enter to close this window… '
 export function buildLaunchScript(): string {
   return `#!/usr/bin/env bash
 { firefox-esr '${GUIDE_PATH}' || firefox '${GUIDE_PATH}' || chromium '${GUIDE_PATH}' || xdg-open '${GUIDE_PATH}'; } >/dev/null 2>&1 &
-(xfce4-terminal --geometry=110x30 --title 'Project Setup — Payload' -x bash '${RUNNER_PATH}' >/dev/null 2>&1 &)
+(xfce4-terminal --hold --geometry=110x30 --title 'Project Setup — Payload' -x bash '${RUNNER_PATH}' >/dev/null 2>&1 &)
 exit 0
 `;
 }

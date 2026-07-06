@@ -28,6 +28,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Short commit hash for the footer. The build context has no .git
+# (.dockerignore), so next.config.ts reads it from this env instead.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
 # Env-var validation in src/env.ts runs at build/import time. The build only
 # needs values that exist; production secrets are injected at runtime.
 ENV HACKCLUB_OIDC_CLIENT_ID=build \

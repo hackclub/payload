@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { vmSessionEvents, vmSessions, users } from "@/db/schema";
+import { vmSessionEvents, vmSessions, users, repoSetups } from "@/db/schema";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getAdminUser } from "@/lib/admin-guard";
 import { getCachetProfile, cachetAvatarUrl } from "@/lib/cachet";
@@ -68,6 +68,23 @@ export async function GET(request: Request) {
     events = rows.map((r) => r.event);
   }
 
+  // AI repo setups ride along in the same feed (one row per setup, stamped
+  // with its latest status change). They live in their own table because the
+  // analysis phase runs before any VM session exists, so they can't be
+  // vm_session_events. Scoped by their own ysws_id; rows whose workspace was
+  // deleted (null ysws_id) are superadmin-only, mirroring the pool rule.
+  // Excluded from the pool view — setups are user activity.
+  let setups: (typeof repoSetups.$inferSelect)[] = [];
+  if (!poolOnly) {
+    const sid = sessionId ? Number(sessionId) : null;
+    const scopeCondition = scope ? inArray(repoSetups.yswsId, scope) : undefined;
+    setups = await db.query.repoSetups.findMany({
+      where: sid !== null ? and(eq(repoSetups.vmSessionId, sid), scopeCondition) : scopeCondition,
+      orderBy: desc(repoSetups.updatedAt),
+      limit,
+    });
+  }
+
   const sessionIds = [...new Set(events.map((e) => e.vmSessionId))];
   const relatedSessions = sessionIds.length > 0
     ? await db.query.vmSessions.findMany({
@@ -79,7 +96,10 @@ export async function GET(request: Request) {
 
   const sessionMap = new Map(relatedSessions.map((s) => [s.id, s]));
 
-  const userIds = [...new Set(relatedSessions.map((s) => s.userId).filter((id): id is string => id !== null))];
+  const userIds = [...new Set([
+    ...relatedSessions.map((s) => s.userId).filter((id): id is string => id !== null),
+    ...setups.map((s) => s.userId),
+  ])];
   const sessionUsers = userIds.length > 0
     ? await db.query.users.findMany({ where: inArray(users.id, userIds) })
     : [];
@@ -99,8 +119,8 @@ export async function GET(request: Request) {
     const isPool = !!session && session.userId === null;
 
     return {
-      id: e.id,
-      vmSessionId: e.vmSessionId,
+      id: `e-${e.id}`,
+      vmSessionId: e.vmSessionId as number | null,
       kind: e.kind,
       payload: e.payload,
       createdAt: e.createdAt,
@@ -111,5 +131,28 @@ export async function GET(request: Request) {
     };
   });
 
-  return NextResponse.json(enriched);
+  const setupRows = setups.map((s) => {
+    const user = userMap.get(s.userId);
+    const slackId = user?.slackId ?? null;
+    const cachet = slackId ? cachetProfiles.get(slackId) : undefined;
+
+    return {
+      id: `s-${s.id}`,
+      vmSessionId: s.vmSessionId,
+      kind: "ai_repo_setup",
+      payload: { repo: s.repoUrl, ...(s.error ? { error: s.error } : {}) } as Record<string, unknown>,
+      createdAt: s.updatedAt,
+      // The setup status renders in the same colored slot as a session state.
+      sessionState: s.status,
+      vmType: "AI Setup",
+      userName: user?.name ?? cachet?.displayName ?? null,
+      userImage: user?.image ?? cachet?.imageUrl ?? (slackId ? cachetAvatarUrl(slackId) : null),
+    };
+  });
+
+  const merged = [...enriched, ...setupRows]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, limit);
+
+  return NextResponse.json(merged);
 }

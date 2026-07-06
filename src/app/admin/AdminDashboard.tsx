@@ -64,7 +64,7 @@ type SystemInfo = {
 };
 
 type LogEntry = {
-  id: number; vmSessionId: number; kind: string; payload: Record<string, unknown>;
+  id: string; vmSessionId: number | null; kind: string; payload: Record<string, unknown>;
   createdAt: string; sessionState: string | null; vmType: string | null;
   userName: string | null; userImage: string | null;
 };
@@ -77,6 +77,9 @@ const STATE_COLORS: Record<string, string> = {
   warm: "text-hc-cyan", pending: "text-hc-yellow", provisioning: "text-hc-yellow",
   ready: "text-hc-green", active: "text-hc-green", terminating: "text-hc-orange",
   terminated: "text-hc-muted", errored: "text-hc-red",
+  // AI repo-setup statuses (shown in the same colored slot as session state)
+  analyzing: "text-hc-yellow", analyzed: "text-hc-cyan", running: "text-hc-yellow",
+  done: "text-hc-green", failed: "text-hc-red",
 };
 
 const STATE_BG: Record<string, string> = {
@@ -703,7 +706,7 @@ function LogsTab({ logs, onRefresh }: { logs: LogEntry[]; onRefresh: () => void 
                       <span className="font-bold text-hc-smoke text-xs">{log.kind}</span>
                       {log.vmType && <span className="text-hc-cyan text-[11px] bg-hc-cyan/10 px-1.5 py-0.5 rounded">{log.vmType}</span>}
                       {log.sessionState && <span className={`${STATE_COLORS[log.sessionState] ?? "text-hc-muted"} text-[11px]`}>{log.sessionState}</span>}
-                      <span className="text-hc-muted text-[11px]">Session #{log.vmSessionId}</span>
+                      {log.vmSessionId !== null && <span className="text-hc-muted text-[11px]">Session #{log.vmSessionId}</span>}
                       {log.userName && <span className="text-hc-muted text-[11px]">by {log.userName}</span>}
                     </div>
                     {Object.keys(log.payload).length > 0 && (
