@@ -284,8 +284,8 @@ async function runBindPhase(sessionId: number) {
     const vmUsername = vmType.username ?? undefined;
     const vmPassword = vmType.password ?? "";
 
-    // Clipboard policy (ADR-0028): host -> VM paste only. disable-copy blocks
-    // VM -> host, disable-paste=false allows host -> VM.
+    // Clipboard policy (ADR-0038, supersedes ADR-0028): both directions open.
+    // disable-copy=false allows VM -> host, disable-paste=false host -> VM.
     const parameters: Record<string, string> =
       vmType.protocol === "rdp"
         ? {
@@ -298,6 +298,9 @@ async function runBindPhase(sessionId: number) {
             "disable-auth": "false",
             "resize-method": "display-update",
             "color-depth": "24",
+            // Never re-encode frames lossily (JPEG/WebP) on the guacd -> browser
+            // leg — text stays crisp at the cost of bandwidth (ADR-0038).
+            "force-lossless": "true",
             "enable-wallpaper": "true",
             "enable-theming": "true",
             "enable-font-smoothing": "true",
@@ -305,7 +308,7 @@ async function runBindPhase(sessionId: number) {
             "enable-desktop-composition": "true",
             "enable-menu-animations": "true",
             "enable-audio": "true",
-            "disable-copy": "true",
+            "disable-copy": "false",
             "disable-paste": "false",
           }
         : {
@@ -315,7 +318,7 @@ async function runBindPhase(sessionId: number) {
             password: vmPassword,
             "color-depth": "24",
             "enable-audio": "true",
-            "disable-copy": "true",
+            "disable-copy": "false",
             "disable-paste": "false",
           };
 

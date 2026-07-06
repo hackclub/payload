@@ -92,7 +92,7 @@ Content-Type: application/json
     "port": "5900",
     "password": "<vm credential>",
     "color-depth": "24",
-    "disable-copy": "true",
+    "disable-copy": "false",
     "disable-paste": "false"
   },
   "attributes": {
@@ -118,8 +118,9 @@ Same shape, but `protocol` is `rdp` and parameters include:
   "security": "any",
   "disable-auth": "false",
   "resize-method": "display-update",
+  "force-lossless": "true",
   "enable-audio": "true",
-  "disable-copy": "true",
+  "disable-copy": "false",
   "disable-paste": "false"
 }
 ```
@@ -196,8 +197,9 @@ To make the future swap easier:
 
 ## Clipboard policy
 
-Payload allows **host → VM paste only**. Reviewers can paste text from their
-local clipboard into the VM, but cannot copy data out of the VM.
+Payload allows clipboard in **both directions** (ADR-0038, supersedes
+ADR-0028's paste-only policy): reviewers can paste text into the VM and copy
+text out of it.
 
 Guacamole's parameters are written from the reviewer's perspective in the
 browser:
@@ -209,10 +211,17 @@ So every connection Payload creates uses:
 
 ```json
 {
-  "disable-copy": "true",
+  "disable-copy": "false",
   "disable-paste": "false"
 }
 ```
+
+VM → host relies on the browser allowing `navigator.clipboard.writeText()`
+from the (same-origin) Guacamole iframe — the session iframe already carries
+`allow="clipboard-read; clipboard-write"`. Chromium writes silently; Firefox/
+Safari may require the reviewer to use Guacamole's Ctrl+Alt+Shift menu
+clipboard as a fallback since they gate async clipboard writes on user
+activation.
 
 This works for the v1 OSes without any host-side agent:
 

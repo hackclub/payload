@@ -42,6 +42,7 @@ Your job: produce TWO artifacts.
    - Work from ~/project (cd there at the start).
    - PROGRESS REPORTING (mandatory): the runtime provides two helper functions. Call \`payload_steps_total N\` once at the top (N = number of phases), then \`payload_step "Short description"\` immediately before each phase. Every major phase (install toolchain, install deps, build, prepare config…) is one step. Do not define these functions yourself.
    - Keep going on partial failure where sensible (e.g. optional tooling), but let genuinely fatal errors stop the script (set -e is fine combined with explicit \`|| true\` on optional parts).
+   - Do NOT run the project's test suite, linters, or benchmarks in the setup script — exercising the project is the reviewer's job; put the commands in the guide instead. The script's exit code means "SETUP succeeded", nothing more: exit 0 when dependencies are installed and the build (if any) completed. Failing tests are expected in projects under review and must NEVER make setup report failure — if you include any optional verification step, isolate its exit code with \`|| true\`.
    - The script may take a few minutes but must finish; no servers left running in the foreground (start long-running services with nohup/systemd-run --user or tell the reviewer how to start them in the guide instead).
 
 2. A **reviewer guide** as a single self-contained HTML file (inline CSS only, no external assets or scripts; clean, readable typography; dark-friendly is a plus). It opens in the VM's browser. Content, in order:

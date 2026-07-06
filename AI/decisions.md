@@ -899,3 +899,36 @@ possible future work.
 - The reviewer/admin management runbook moves from editing `scripts/seed.ts` to
   the admin UI; `seed.ts` now only bootstraps the first superadmin and Legacy
   workspace.
+
+---
+
+## ADR-0038 - Bidirectional clipboard + lossless RDP encoding
+
+**Date:** 2026-07-06 | **Status:** Accepted. Supersedes ADR-0028 (host → VM paste only).
+
+ADR-0028 blocked VM → host copy as a light exfiltration speed bump. In
+practice reviewers copy error messages, logs, and URLs out of the VM
+constantly, and the block only cost them screenshots — the reviewed code was
+already on their screen, so it never prevented anything.
+
+**Decision:**
+- Every Guacamole connection now sets `disable-copy=false` and
+  `disable-paste=false` — clipboard works both ways. Browser side was already
+  in place (`allow="clipboard-read; clipboard-write"` on the session iframe;
+  the SessionClient clipboard plumbing anticipated `writeText`). Chromium
+  writes the host clipboard silently; Firefox/Safari gate async writes on
+  user activation, so there the Ctrl+Alt+Shift Guacamole menu clipboard is
+  the fallback.
+- RDP connections additionally set `force-lossless=true`: guacd stops
+  re-encoding dirty regions as lossy JPEG/WebP on the guacd → browser leg, so
+  text and UI edges stay crisp (the "smudged text after scrolling" artifact
+  disappears) at the cost of bandwidth. `color-depth` stays 24 (RDP true
+  color). VNC types (android/macos) are unchanged.
+
+**Consequences:**
+- Applies to connections created at bind — existing sessions keep their old
+  parameters until relaunched.
+- Note (ADR-0031/guacamole.md): macOS still has no clipboard path at all —
+  its VNC dialect lacks `ClientCutText`; unaffected by this change.
+- If lossless proves too heavy for remote reviewers, the knob to revisit is
+  per-type parameters in `vm_types` rather than reverting globally.
