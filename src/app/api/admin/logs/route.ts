@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { vmSessionEvents, vmSessions, users } from "@/db/schema";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getAdminUser } from "@/lib/admin-guard";
 import { getCachetProfile, cachetAvatarUrl } from "@/lib/cachet";
 
@@ -13,6 +13,10 @@ export async function GET(request: Request) {
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? "100"), 1), 500);
   const sessionId = url.searchParams.get("sessionId");
   const filterYsws = url.searchParams.get("yswsId");
+  // Warm-pool churn (reconciler warm/claim/terminate events) would drown out —
+  // and, via the row limit, crowd out — user session events, so pool events
+  // are a separate view: default excludes them, ?pool=1 shows only them.
+  const poolOnly = url.searchParams.get("pool") === "1";
 
   // Resolve which workspaces this admin may read events from. null = all
   // (superadmin, unfiltered). Workspace admins are always restricted, and the
@@ -47,11 +51,21 @@ export async function GET(request: Request) {
       limit,
     });
   } else {
-    events = await db.query.vmSessionEvents.findMany({
-      where: scopedSessionIds ? inArray(vmSessionEvents.vmSessionId, scopedSessionIds) : undefined,
-      orderBy: desc(vmSessionEvents.createdAt),
-      limit,
-    });
+    // Join to the owning session so events can be split into user vs. pool
+    // (pool sessions have null user_id).
+    const poolCondition = poolOnly ? isNull(vmSessions.userId) : isNotNull(vmSessions.userId);
+    const rows = await db
+      .select({ event: vmSessionEvents })
+      .from(vmSessionEvents)
+      .innerJoin(vmSessions, eq(vmSessionEvents.vmSessionId, vmSessions.id))
+      .where(
+        scopedSessionIds
+          ? and(inArray(vmSessionEvents.vmSessionId, scopedSessionIds), poolCondition)
+          : poolCondition,
+      )
+      .orderBy(desc(vmSessionEvents.createdAt))
+      .limit(limit);
+    events = rows.map((r) => r.event);
   }
 
   const sessionIds = [...new Set(events.map((e) => e.vmSessionId))];

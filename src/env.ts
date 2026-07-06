@@ -43,6 +43,23 @@ const envSchema = z.object({
   PROXMOX_SSH_PASSWORD: z.string().optional(),
   PROXMOX_SSH_PORT: z.coerce.number().int().positive().default(22),
 
+  // Environment namespace for shared infra. Prefixes Proxmox VM names and
+  // Guacamole usernames/connection names, and scopes the reaper's orphan sweep
+  // to VMs carrying this prefix — so a dev and a prod instance can share one
+  // Proxmox/Guacamole without reaping or overwriting each other's resources.
+  // Production omits this (default "payload"); a dev env sets e.g. "dev-payload".
+  VM_NAME_PREFIX: z
+    .string()
+    .regex(
+      /^[a-z](?:[a-z0-9-]{0,18}[a-z0-9])?$/,
+      "Must be a short DNS-safe label (lowercase letters, digits, hyphens; max 20 chars)"
+    )
+    .refine(
+      (val) => val === "payload" || !val.startsWith("payload-"),
+      'Must not start with "payload-": instances filtering on the default prefix would reap this environment\'s VMs as orphans'
+    )
+    .default("payload"),
+
   // Guacamole
   GUACAMOLE_BASE_URL: z.string().url(),
   GUACAMOLE_PUBLIC_BASE_URL: z.string().url(),
@@ -66,6 +83,11 @@ const envSchema = z.object({
   IP_DISCOVERY_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
 
   // Warm pool (ADR-0033)
+  // Master switch for proactive warm-VM booting. false = the reconciler never
+  // refills pools (as if every vm_types.warm_pool_size were 0); user launches
+  // still work via cold provisioning, and any existing warm VMs drain
+  // naturally (age-out recycle / sacrifice). For dev against shared infra.
+  WARM_POOL_ENABLED: booleanFromEnv(true),
   // Total RAM (MB) the warm pool + all sessions may commit. Admission and
   // pool decisions are made against this, summing vm_types.memory_mb.
   PAYLOAD_VM_MEMORY_BUDGET_MB: z.coerce.number().int().positive().default(50_000),

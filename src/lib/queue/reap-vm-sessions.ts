@@ -3,6 +3,7 @@ import { vmSessions } from "@/db/schema";
 import { and, eq, lte, inArray, isNotNull } from "drizzle-orm";
 import { enqueueTerminateVm } from "@/lib/queue";
 import { createProxmoxClient, getProxmoxConfig } from "@/lib/proxmox/config";
+import { env } from "@/env";
 
 type VmSessionState = (typeof vmSessions.state.enumValues)[number];
 
@@ -87,8 +88,11 @@ async function sweepProxmoxVms() {
     return; // Proxmox unreachable — best-effort, try again next tick.
   }
 
+  // Only sweep VMs in this environment's namespace — another instance sharing
+  // the Proxmox (e.g. local dev vs prod) owns its own prefix (see env.ts).
+  const namePrefix = `${env.VM_NAME_PREFIX}-`;
   const payloadVms = vms.filter(
-    (v) => typeof v.name === "string" && v.name.startsWith("payload-") && v.template !== 1,
+    (v) => typeof v.name === "string" && v.name.startsWith(namePrefix) && v.template !== 1,
   );
   if (payloadVms.length === 0) return;
 

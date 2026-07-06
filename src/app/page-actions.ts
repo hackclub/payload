@@ -12,13 +12,18 @@ import { aiEnabled } from "@/lib/ai/client";
 import { validateRepoUrl, RepoCloneError } from "@/lib/repo-setup/clone";
 import { pruneTerminalRepoSetups } from "@/lib/repo-setup/history";
 
-export async function launchVm(vmTypeSlug: string): Promise<{ error: string } | void> {
+export async function launchVm(
+  vmTypeSlug: string,
+): Promise<{ error: string } | { sessionId: number }> {
   const authResult = await getAllowlistedUser();
   if (!authResult) return { error: "Unauthorized" };
 
-  let session;
   try {
-    session = await createUserSession(authResult.userId, vmTypeSlug, authResult.activeYswsId);
+    const session = await createUserSession(authResult.userId, vmTypeSlug, authResult.activeYswsId);
+    // Navigation happens client-side: a server redirect() here rejects the
+    // action promise with NEXT_REDIRECT, which the form's catch shows as an
+    // error toast before the router navigates.
+    return { sessionId: session.id };
   } catch (error) {
     // Return known errors (per-user cap, workspace cap, server at capacity) so
     // the UI can show them. Thrown server-action messages are redacted in prod.
@@ -27,9 +32,6 @@ export async function launchVm(vmTypeSlug: string): Promise<{ error: string } | 
     }
     return { error: error instanceof Error ? error.message : "Failed to launch VM" };
   }
-
-  // redirect() throws NEXT_REDIRECT and must stay outside the try above.
-  redirect(`/sessions/${session.id}`);
 }
 
 // Session states that hold (or will hold) a VM slot — mirrors COMMITTED_STATES

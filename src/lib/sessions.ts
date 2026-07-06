@@ -70,7 +70,7 @@ export async function createUserSession(userId: string, vmTypeSlug: string, ysws
 
       if (inWorkspace.length >= yswsRow.cap) {
         throw new YswsCapError(
-          "No more VM capacity available in your workspace. Please try again later, or contact your organizer.",
+          "VM capacity filled for your workspace. Please try again later or contact your organizer(sowy)",
         );
       }
     }
@@ -142,9 +142,17 @@ export async function createUserSession(userId: string, vmTypeSlug: string, ysws
       );
     }
 
+    // The TTL clock starts at launch (user click), matching the warm-claim
+    // path above — not when the VM finally boots.
     const [row] = await tx
       .insert(vmSessions)
-      .values({ userId, yswsId, vmTypeId: vmType.id, state: "pending", expiresAt: null })
+      .values({
+        userId,
+        yswsId,
+        vmTypeId: vmType.id,
+        state: "pending",
+        expiresAt: new Date(Date.now() + SESSION_LIFETIME_MS),
+      })
       .returning();
 
     await tx.insert(vmSessionEvents).values({

@@ -15,6 +15,7 @@ import {
   enqueueRunSetup,
 } from "@/lib/queue";
 import { ownedVmName, warmVmName } from "@/lib/vm-naming";
+import { env } from "@/env";
 import { guestOs } from "@/lib/guest/transfer";
 import { randomBytes } from "node:crypto";
 
@@ -205,7 +206,8 @@ async function runWarmPhase(sessionId: number) {
 /**
  * Bind phase: health-check the (already booted) VM, rename it to its owner,
  * register the one-shot Guacamole user + connection, and mark the session
- * ready with a fresh 6h TTL. Self-cleans its Guacamole resources on failure.
+ * ready (the 6h TTL was already stamped at launch). Self-cleans its Guacamole
+ * resources on failure.
  */
 async function runBindPhase(sessionId: number) {
   const session = await db.query.vmSessions.findFirst({
@@ -270,7 +272,9 @@ async function runBindPhase(sessionId: number) {
 
   // --- Guacamole registration (one-shot user + connection). ---
   const guac = createGuacamoleClient(getGuacamoleConfig());
-  const guacamoleUsername = `payload-${sessionId}`;
+  // Prefixed so environments sharing one Guacamole (dev/prod) can't collide on
+  // session ids from their separate databases.
+  const guacamoleUsername = `${env.VM_NAME_PREFIX}-${sessionId}`;
   const guacamolePassword = randomBytes(18).toString("base64url");
   let guacamoleConnectionId: string | undefined;
 
@@ -316,7 +320,7 @@ async function runBindPhase(sessionId: number) {
           };
 
     const connection = await guac.createConnection({
-      name: `payload-${sessionId}`,
+      name: `${env.VM_NAME_PREFIX}-${sessionId}`,
       protocol: vmType.protocol as "rdp" | "vnc",
       parameters,
     });
@@ -328,6 +332,10 @@ async function runBindPhase(sessionId: number) {
     });
 
     const now = new Date();
+    // The 6h TTL clock starts at launch (claim or cold-demand creation) and is
+    // never restarted here at boot — the fallback only covers legacy rows that
+    // reached ready without an expiry.
+    const expiresAt = session.expiresAt ?? new Date(now.getTime() + SESSION_LIFETIME_MS);
     await db
       .update(vmSessions)
       .set({
@@ -337,8 +345,7 @@ async function runBindPhase(sessionId: number) {
         guacamoleConnectionId,
         guacamoleUsername,
         guacamolePasswordCiphertext: encrypt(guacamolePassword),
-        // The 6h TTL clock starts now, at claim — never while warm (ADR-0033).
-        expiresAt: new Date(now.getTime() + SESSION_LIFETIME_MS),
+        expiresAt,
         claimedAt: now,
         updatedAt: now,
       })
@@ -349,7 +356,14 @@ async function runBindPhase(sessionId: number) {
       kind: "ready",
       payload: { ip: vmIp, guacamoleConnectionId },
     });
-    publish({ type: "ready", state: "ready", sessionId, data: { ip: vmIp } });
+    // expiresAt rides along so a page opened mid-provisioning (server-rendered
+    // with a null TTL) can start its countdown without a refresh.
+    publish({
+      type: "ready",
+      state: "ready",
+      sessionId,
+      data: { ip: vmIp, expiresAt: expiresAt.toISOString() },
+    });
 
     // Kick background customization if the owner has anything to apply for this
     // VM's OS — a custom wallpaper, package installs, or a startup script. Runs

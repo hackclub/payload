@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { launchVm } from "@/app/page-actions";
 
 interface LaunchVmFormProps {
@@ -11,6 +12,7 @@ interface LaunchVmFormProps {
 }
 
 export default function LaunchVmForm({ vmTypeSlug, isExpensive, vmDisplayName, children }: LaunchVmFormProps) {
+  const router = useRouter();
   const [showWarning, setShowWarning] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,14 +32,16 @@ export default function LaunchVmForm({ vmTypeSlug, isExpensive, vmDisplayName, c
     setError(null);
     try {
       const result = await launchVm(vmTypeSlug);
-      // A successful launch redirects; only a returned object means failure.
-      if (result?.error) {
+      if ("error" in result) {
         setError(result.error);
         setIsPending(false);
+      } else {
+        // Keep the button disabled while the router navigates.
+        router.push(`/sessions/${result.sessionId}`);
       }
     } catch (error) {
       console.error("Failed to launch VM:", error);
-      setError("Something went wrong launching the VM. Please try again.");
+      setError("VM brokey. Please try again.");
       setIsPending(false);
     }
   };

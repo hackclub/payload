@@ -74,7 +74,14 @@ export async function GET(
         return;
       }
 
-      send({ type: "state_change", state: session.state, sessionId });
+      send({
+        type: "state_change",
+        state: session.state,
+        sessionId,
+        // Lets a client that connected before the TTL clock started (cold
+        // provisioning) pick up the expiry without a page refresh.
+        data: session.expiresAt ? { expiresAt: session.expiresAt.toISOString() } : undefined,
+      });
       initialSent = true;
 
       if (session.state === "terminated" || session.state === "errored") {

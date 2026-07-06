@@ -103,6 +103,9 @@ export default function AdminDashboard({ isSuperadmin }: { isSuperadmin: boolean
   const [activeTab, setActiveTab] = useState<Tab>("members");
   // "" means "all workspaces I can see" (used by sessions/logs).
   const [selectedYswsId, setSelectedYswsId] = useState<string>("");
+  // Sessions/Logs show user activity by default; superadmins can flip to the
+  // warm-pool (Payload) view so reconciler churn doesn't spam the user lists.
+  const [showPool, setShowPool] = useState(false);
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -115,7 +118,8 @@ export default function AdminDashboard({ isSuperadmin }: { isSuperadmin: boolean
   const [error, setError] = useState<string | null>(null);
 
   const selectedWorkspace = workspaces.find((w) => w.id === selectedYswsId) ?? null;
-  const scopeQuery = selectedYswsId ? `?yswsId=${encodeURIComponent(selectedYswsId)}` : "";
+  // Pool sessions are workspace-less, so the pool view ignores the scope picker.
+  const scopeQuery = showPool ? "?pool=1" : selectedYswsId ? `?yswsId=${encodeURIComponent(selectedYswsId)}` : "";
 
   const call = useCallback(async (input: RequestInfo, init?: RequestInit) => {
     const res = await fetch(input, init);
@@ -188,7 +192,8 @@ export default function AdminDashboard({ isSuperadmin }: { isSuperadmin: boolean
     try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : "Action failed"); }
   };
 
-  const showScopePicker = activeTab === "members" || activeTab === "sessions" || activeTab === "logs";
+  const isListTab = activeTab === "sessions" || activeTab === "logs";
+  const showScopePicker = activeTab === "members" || (isListTab && !showPool);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -222,19 +227,43 @@ export default function AdminDashboard({ isSuperadmin }: { isSuperadmin: boolean
         })}
       </div>
 
-      {showScopePicker && (
-        <div>
-          <WorkspaceScope
-            workspaces={workspaces}
-            value={selectedYswsId}
-            onChange={setSelectedYswsId}
-            allowAll={activeTab !== "members"}
-          />
-          {selectedWorkspace && (
-            <p className="text-sm text-hc-muted mt-1.5">
-              {selectedWorkspace.memberCount} member{selectedWorkspace.memberCount === 1 ? "" : "s"} · {selectedWorkspace.activeVms} active VM{selectedWorkspace.activeVms === 1 ? "" : "s"}
-              {selectedWorkspace.maxConcurrentVms != null ? ` / ${selectedWorkspace.maxConcurrentVms} cap` : " · unlimited"}
-            </p>
+      {(showScopePicker || (isSuperadmin && isListTab)) && (
+        <div className="flex flex-wrap items-start gap-4">
+          {isSuperadmin && isListTab && (
+            <div className="flex items-center gap-1 bg-hc-darkless rounded-hc p-1">
+              <button
+                onClick={() => setShowPool(false)}
+                className={`px-3 py-1.5 rounded-hc text-sm font-bold transition-colors ${
+                  !showPool ? "bg-hc-dark text-hc-smoke shadow-sm" : "text-hc-muted hover:text-hc-smoke"
+                }`}
+              >
+                Users
+              </button>
+              <button
+                onClick={() => setShowPool(true)}
+                className={`px-3 py-1.5 rounded-hc text-sm font-bold transition-colors ${
+                  showPool ? "bg-hc-dark text-hc-cyan shadow-sm" : "text-hc-muted hover:text-hc-smoke"
+                }`}
+              >
+                Warm pool
+              </button>
+            </div>
+          )}
+          {showScopePicker && (
+            <div>
+              <WorkspaceScope
+                workspaces={workspaces}
+                value={selectedYswsId}
+                onChange={setSelectedYswsId}
+                allowAll={activeTab !== "members"}
+              />
+              {selectedWorkspace && (
+                <p className="text-sm text-hc-muted mt-1.5">
+                  {selectedWorkspace.memberCount} member{selectedWorkspace.memberCount === 1 ? "" : "s"} · {selectedWorkspace.activeVms} active VM{selectedWorkspace.activeVms === 1 ? "" : "s"}
+                  {selectedWorkspace.maxConcurrentVms != null ? ` / ${selectedWorkspace.maxConcurrentVms} cap` : " · unlimited"}
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -631,7 +660,7 @@ function SessionsTab({
                       <span className={`${STATE_BG[s.state] ?? ""} ${STATE_COLORS[s.state] ?? "text-hc-muted"} font-bold text-xs px-2 py-0.5 rounded-full border`}>{s.state}</span>
                     </td>
                     <td className="py-3 px-4 text-hc-muted text-xs">
-                      {s.expiresAt && ["provisioning", "ready", "active"].includes(s.state) ? formatTimeRemaining(s.expiresAt) : "-"}
+                      {s.expiresAt && ["pending", "provisioning", "ready", "active"].includes(s.state) ? formatTimeRemaining(s.expiresAt) : "-"}
                     </td>
                     <td className="py-3 px-4 text-hc-muted text-xs">{new Date(s.createdAt).toLocaleString()}</td>
                     <td className="py-3 px-4 text-right">

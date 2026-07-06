@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { vmSessions, users, platformSuperadmins } from "@/db/schema";
-import { desc, inArray, sql } from "drizzle-orm";
+import { and, desc, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getAdminUser } from "@/lib/admin-guard";
 import { getCachetProfile, cachetAvatarUrl } from "@/lib/cachet";
 
@@ -13,7 +13,12 @@ export async function GET(request: Request) {
   // ?yswsId); workspace admins see only VMs in the workspaces they administer.
   // The warm pool is ownerless (null ysws_id) and global infra, so only
   // superadmins ever see it (ADR-0036).
-  const filterYsws = new URL(request.url).searchParams.get("yswsId");
+  const searchParams = new URL(request.url).searchParams;
+  const filterYsws = searchParams.get("yswsId");
+  // Warm-pool sessions (null user_id) churn constantly and would drown out —
+  // and, via the row limit, crowd out — real user sessions, so they're a
+  // separate view: default excludes them, ?pool=1 shows only them.
+  const poolOnly = searchParams.get("pool") === "1";
   let scope: string[] | null;
   if (admin.isSuperadmin) {
     scope = filterYsws ? [filterYsws] : null; // null = no restriction
@@ -24,8 +29,9 @@ export async function GET(request: Request) {
 
   // Sort by when a session was actually claimed/used, falling back to created_at
   // for still-warm/cold rows (see the warm-pool ordering note in ADR-0033).
+  const poolCondition = poolOnly ? isNull(vmSessions.userId) : isNotNull(vmSessions.userId);
   const allSessions = await db.query.vmSessions.findMany({
-    where: scope ? inArray(vmSessions.yswsId, scope) : undefined,
+    where: scope ? and(inArray(vmSessions.yswsId, scope), poolCondition) : poolCondition,
     orderBy: desc(sql`coalesce(${vmSessions.claimedAt}, ${vmSessions.createdAt})`),
     with: { vmType: true, ysws: true },
     limit: 100,

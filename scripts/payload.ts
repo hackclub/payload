@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { randomBytes } from "node:crypto";
+import { env } from "../src/env";
 import { db } from "../src/db";
 import { vmTypes, vmSessions } from "../src/db/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -45,8 +46,8 @@ async function main() {
 /**
  * Stop and destroy every warm-pool VM: ownerless sessions in warm/warming
  * states (plus their Proxmox VMs and any Guacamole leftovers), and any
- * `payload-warm-*` Proxmox VM with no matching row. User-owned sessions are
- * never touched.
+ * `<VM_NAME_PREFIX>-warm-*` Proxmox VM with no matching row. User-owned
+ * sessions are never touched.
  *
  * Pass `--zero` to also set every `vm_types.warm_pool_size = 0`, so a running
  * reconciler won't immediately refill the pool.
@@ -94,14 +95,17 @@ async function poolDestroy() {
       .where(eq(vmSessions.id, row.id));
   }
 
-  // 2. Proxmox orphans named payload-warm-* with no live row we just handled.
+  // 2. Proxmox orphans named <prefix>-warm-* with no live row we just handled.
+  // Scoped to this environment's VM_NAME_PREFIX — on shared Proxmox, another
+  // environment's warm pool is not ours to destroy.
+  const warmNamePrefix = `${env.VM_NAME_PREFIX}-warm-`;
   let orphanCount = 0;
   try {
     const vms = await proxmox.listVms(config.defaultNode);
     const orphans = vms.filter(
       (v) =>
         typeof v.name === "string" &&
-        v.name.startsWith("payload-warm-") &&
+        v.name.startsWith(warmNamePrefix) &&
         v.template !== 1 &&
         !handledVmids.has(v.vmid),
     );

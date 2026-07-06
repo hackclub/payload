@@ -8,6 +8,7 @@ import {
   PAYLOAD_VM_MEMORY_BUDGET_MB,
   WARM_MAX_AGE_MS,
   MAX_CONCURRENT_WARM_BOOTS,
+  WARM_POOL_ENABLED,
   type TerminateVmJobData,
 } from "@/lib/queue";
 import { publish } from "@/lib/sse";
@@ -166,7 +167,10 @@ export async function processReconcilePool() {
     }
 
     // --- 3. Refill pools toward warm_pool_size with leftover budget ---
-    for (const t of types) {
+    // WARM_POOL_ENABLED=false acts as warm_pool_size 0 for every type: no
+    // speculative boots, while recycling (step 1) and demand serving (step 2)
+    // keep running so launches still work and leftover warm VMs drain.
+    for (const t of WARM_POOL_ENABLED ? types : []) {
       if (t.warmPoolSize <= 0) continue;
       const poolCount = live.filter(
         (r) =>

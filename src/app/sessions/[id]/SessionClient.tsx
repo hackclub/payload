@@ -30,10 +30,13 @@ export default function SessionClient({
   initialState,
   vmTypeName,
   vmIcon,
-  expiresAt,
+  expiresAt: initialExpiresAt,
   terminationReason,
 }: SessionClientProps) {
   const [state, setState] = useState(initialState);
+  // Server-rendered value is null while provisioning (TTL starts at claim);
+  // SSE delivers the real expiry when the session becomes ready.
+  const [expiresAt, setExpiresAt] = useState(initialExpiresAt);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState("");
   const [isUiVisible, setIsUiVisible] = useState(true);
@@ -208,6 +211,9 @@ export default function SessionClient({
         const data = JSON.parse(event.data);
         if (data.state) {
           setState(data.state);
+        }
+        if (typeof data.data?.expiresAt === "string") {
+          setExpiresAt(data.data.expiresAt);
         }
         if (data.type === "terminated" || data.type === "errored" || data.state === "terminated" || data.state === "errored") {
           eventSource.close();
@@ -624,9 +630,6 @@ export default function SessionClient({
               <p className="text-lg font-bold text-hc-snow tracking-tight">
                 Setting up your VM
               </p>
-              <p className="text-sm text-hc-muted">
-                This should only take a few moments.
-              </p>
             </div>
           </div>
         ) : state === "terminating" ? (
@@ -635,7 +638,7 @@ export default function SessionClient({
               <div className="absolute inset-0 border-[3px] border-hc-red/20 rounded-full"></div>
               <div className="absolute inset-0 border-[3px] border-hc-red border-t-transparent rounded-full animate-spin"></div>
             </div>
-            <p className="text-base font-medium text-hc-muted">Closing VM...</p>
+            <p className="text-lg font-bold text-hc-snow tracking-tight">Closing VM...</p>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-5 animate-in fade-in duration-500">
@@ -643,7 +646,7 @@ export default function SessionClient({
               <div className="absolute inset-0 border-[3px] border-hc-red/20 rounded-full"></div>
               <div className="absolute inset-0 border-[3px] border-hc-red border-t-transparent rounded-full animate-spin"></div>
             </div>
-            <p className="text-base font-medium text-hc-muted">Initializing connection...</p>
+            <p className="text-lg font-bold text-hc-snow tracking-tight">Initializing connection...</p>
           </div>
         )}
       </div>
