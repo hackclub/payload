@@ -28,9 +28,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Short commit hash for the footer. The build context has no .git
-# (.dockerignore), so next.config.ts reads it from this env instead.
-ARG GIT_SHA=unknown
+# Short commit hash for the footer. Optional: next.config.ts resolves it from
+# the minimal .git metadata kept in the build context (see .dockerignore). This
+# arg is only an override for contexts without .git (e.g. tarball builds).
+ARG GIT_SHA
 ENV GIT_SHA=$GIT_SHA
 
 # Env-var validation in src/env.ts runs at build/import time. The build only

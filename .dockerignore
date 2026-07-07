@@ -1,4 +1,11 @@
+# Exclude the git history, but keep the minimal metadata next.config.ts needs
+# to resolve the footer's commit sha inside the build (no git binary required).
+# This makes the GIT_SHA build arg optional; it stays supported as an override.
 .git
+!.git/HEAD
+!.git/refs
+!.git/refs/**
+!.git/packed-refs
 .github
 .next
 node_modules

@@ -112,7 +112,7 @@ const envSchema = z.object({
   AI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().min(1).default("deepseek/deepseek-v4-pro"),
   // Reject cloned repos larger than this (checkout size, not history).
-  REPO_MAX_CLONE_MB: z.coerce.number().int().positive().default(200),
+  REPO_MAX_CLONE_MB: z.coerce.number().int().positive().default(350),
 });
 
 const parsed = envSchema.safeParse(process.env);

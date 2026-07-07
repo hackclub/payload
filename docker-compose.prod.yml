@@ -52,8 +52,10 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        # Set by the deploy command: GIT_SHA=$(git rev-parse --short HEAD)
-        GIT_SHA: ${GIT_SHA:-unknown}
+        # Optional override. When unset, next.config.ts resolves the footer sha
+        # from the .git metadata kept in the build context (see .dockerignore),
+        # so a plain `docker compose build` still shows the right commit.
+        GIT_SHA: ${GIT_SHA:-}
     image: payload:latest
     restart: unless-stopped
     depends_on:
