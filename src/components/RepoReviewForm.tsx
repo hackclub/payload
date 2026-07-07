@@ -41,7 +41,7 @@ export default function RepoReviewForm({ disabledReason = null }: { disabledReas
         <h2 className="text-xl font-bold text-hc-snow">Review a project</h2>
       </div>
       <p className="text-hc-muted text-sm mb-4">
-        Use AI to automatically setup the project !
+        Use AI to automatically setup the project ! (only for Linux tho)
       </p>
 
       <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
