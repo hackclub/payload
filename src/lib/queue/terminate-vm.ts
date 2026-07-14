@@ -76,6 +76,11 @@ export async function processTerminateVm(jobData: TerminateJobData) {
       state: "terminated",
       terminatedAt: new Date(),
       terminationReason: reason,
+      // Release the VMID so it can be reallocated. The Proxmox VM has been
+      // deleted above, so the DB row must not keep squatting on a 69xxx slot
+      // (the allocatable namespace is only 1000 wide).
+      proxmoxVmid: null,
+      proxmoxNode: null,
       updatedAt: new Date(),
     })
     .where(eq(vmSessions.id, sessionId));

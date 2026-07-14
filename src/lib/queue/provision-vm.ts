@@ -458,7 +458,11 @@ async function discardVm(sessionId: number, reason: string) {
 async function markErrored(sessionId: number, error: unknown, phase: string) {
   await db
     .update(vmSessions)
-    .set({ state: "errored", updatedAt: new Date() })
+    // Release the VMID: an errored session must not keep squatting on a 69xxx
+    // slot (the namespace is only 1000 wide). Any VM that was actually created
+    // on Proxmox becomes an orphan and is reaped by sweepProxmoxVms(), which
+    // enumerates Proxmox directly rather than relying on this row's vmid.
+    .set({ state: "errored", proxmoxVmid: null, proxmoxNode: null, updatedAt: new Date() })
     .where(eq(vmSessions.id, sessionId));
   await db.insert(vmSessionEvents).values({
     vmSessionId: sessionId,
