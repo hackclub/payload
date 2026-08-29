@@ -63,7 +63,7 @@ RUN apt-get update \
 
 # sharp needs its prebuilt linux-x64 binary at runtime; Next.js standalone
 # output does not include optional deps, so install it in the runner image.
-RUN npm install -g sharp@0.33 --os=linux --cpu=x64 --libc=glibc
+RUN npm install -g sharp@0.35.4 --os=linux --cpu=x64 --libc=glibc
 
 # tsx lets us run the .ts migration/seed scripts at runtime.
 RUN npm install -g tsx

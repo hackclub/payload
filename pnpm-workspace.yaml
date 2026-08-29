@@ -1,6 +1,14 @@
 packages:
   - '.'
 
+# pnpm 11 requires an explicit allow/deny for packages with install scripts.
+# pnpm 9 (Docker) still honors ignoredBuiltDependencies and ignores allowBuilds.
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: true
+  sharp: true
+  unrs-resolver: true
+
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
