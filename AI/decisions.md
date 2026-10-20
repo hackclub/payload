@@ -932,3 +932,49 @@ already on their screen, so it never prevented anything.
   its VNC dialect lacks `ClientCutText`; unaffected by this change.
 - If lossless proves too heavy for remote reviewers, the knob to revisit is
   per-type parameters in `vm_types` rather than reverting globally.
+
+---
+
+## ADR-0039 - fiona starts VMs and shows them in its own window
+
+**Date:** 2026-10-20 | **Status:** Accepted.
+
+Reviewers live in fiona (ds.shipwrights.dev). Sending them to
+payload.hackclub.com for every VM breaks their flow, so fiona gets a Payload
+button: pick a VM type, and the VM opens in a window inside fiona that can be
+minimized and keeps running.
+
+Framing payload.hackclub.com as-is doesn't work: fiona is another site, so
+Payload's Auth.js cookie is third-party there (Safari and Firefox drop it) and
+the Hack Club Auth login page won't load in a frame. Framing `/guac` directly
+loses SessionClient's clipboard and focus fixes, which need the Guacamole
+iframe to be same-origin with the page around it.
+
+**Decision:**
+- `/api/fiona/vms` (list, start), `/api/fiona/vms/:id` (destroy) and
+  `/api/fiona/vms/:id/embed` (ticket) take `Authorization: Bearer
+  FIONA_API_KEY` plus `X-Slack-Id`. fiona vouches for who the person is;
+  Payload still decides what they may do: a member of `FIONA_WORKSPACE` (or a
+  superadmin), the per-user cap and the workspace cap all apply. Destroying
+  your own VM needs no membership.
+- People are matched on Slack ID only. Someone who has never signed in here
+  gets a user row with no email; their first Hack Club sign-in claims it by
+  Slack ID (`src/auth.ts`) so they don't end up as two people.
+- The window loads `/embed/:id/start?ticket=…`. Tickets live in Redis for 60
+  seconds and are burned on first use for a grant, set as cookie
+  `payload_embed_<id>`: HttpOnly, Secure, SameSite=None, Partitioned, valid
+  for 6 hours and for that one VM only. The page then redirects to
+  `/embed/:id` so the ticket leaves the URL.
+- `/embed/:id` renders SessionClient with `embedOrigins`: no dashboard link or
+  Destroy (fiona's window has them), state and expiry go to fiona by
+  postMessage, and fiona can ask for focus. The per-VM API routes accept the
+  embed cookie as well as a signed-in member (`getSessionUserId`).
+- `src/proxy.ts` sets `frame-ancestors 'self'` plus `FIONA_ORIGINS` on
+  `/embed/*` only.
+
+**Consequences:**
+- A leaked FIONA_API_KEY lets someone start and destroy VMs as existing
+  members, but not add members or touch workspaces. Rotate it on both sides.
+- A minimized window keeps heartbeating, so its VM lives until the 6-hour cap
+  like an open tab would.
+- `/guac` still has no framing policy of its own; its tokens stay the gate.

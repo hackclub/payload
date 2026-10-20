@@ -175,7 +175,7 @@ export async function createUserSession(userId: string, vmTypeSlug: string, ysws
   return result.row;
 }
 
-function advisoryLockKey(seed: string): bigint {
+export function advisoryLockKey(seed: string): bigint {
   const hash = createHash("md5").update(seed).digest("hex");
   return BigInt("0x" + hash.slice(0, 15));
 }
