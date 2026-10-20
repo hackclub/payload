@@ -142,6 +142,11 @@ export class ProxmoxClient {
     while (Date.now() < timeoutAt) {
       const status = await this.getTaskStatus(input.node, input.upid);
       if (status.status === "stopped") {
+        // "WARNINGS: n" means it finished, with warnings in the task log
+        if (status.exitstatus?.startsWith("WARNINGS:")) {
+          console.warn(`[proxmox] task ${input.upid} finished with ${status.exitstatus}`);
+          return;
+        }
         if (status.exitstatus && status.exitstatus !== "OK") {
           throw new Error(`Proxmox task failed with exit status ${status.exitstatus}`);
         }
