@@ -113,6 +113,10 @@ const envSchema = z.object({
   AI_MODEL: z.string().min(1).default("deepseek/deepseek-v4-pro"),
   // Reject cloned repos larger than this (checkout size, not history).
   REPO_MAX_CLONE_MB: z.coerce.number().int().positive().default(350),
+
+  // fiona (ADR-0039). FIONA_API_KEY unset turns /api/fiona off.
+  FIONA_API_KEY: z.string().min(32).optional(),
+  FIONA_WORKSPACE: z.string().min(1).default("shipwrights"),
 });
 
 const parsed = envSchema.safeParse(process.env);

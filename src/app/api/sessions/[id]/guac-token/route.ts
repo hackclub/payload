@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { vmSessions } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getAllowlistedUser } from "@/lib/auth-guard";
+import { getSessionUserId } from "@/lib/auth-guard";
 import { decrypt } from "@/lib/crypto";
 import { createGuacamoleClient, getGuacamoleConfig } from "@/lib/guacamole/config";
 
@@ -10,22 +10,22 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const authResult = await getAllowlistedUser();
-  if (!authResult) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { id } = await params;
   const sessionId = Number(id);
   if (!Number.isFinite(sessionId)) {
     return NextResponse.json({ error: "Invalid session ID" }, { status: 400 });
   }
 
+  const userId = await getSessionUserId(sessionId);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const session = await db.query.vmSessions.findFirst({
     where: eq(vmSessions.id, sessionId),
   });
 
-  if (!session || session.userId !== authResult.userId) {
+  if (!session || session.userId !== userId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
