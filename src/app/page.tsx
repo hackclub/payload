@@ -60,7 +60,7 @@ export default async function Dashboard() {
             Payload
           </h1>
           <p className="text-lg md:text-xl text-hc-smoke max-w-xl mx-auto leading-relaxed">
-            VMs for Hack Club project reviewers. Login with your Hack Club account to get started.
+            Windows, macOS, Linux and Android VMs for Hack Club reviewers. Sign in with your Hack Club account to get started.
           </p>
           <div className="flex flex-col items-center gap-4 pt-6">
             <form
@@ -74,9 +74,6 @@ export default async function Dashboard() {
                 Sign in with Hack Club
               </button>
             </form>
-            <p className="text-hc-muted text-sm mt-4">
-              Need access? <a href={env.SLACK_REQUEST_URL} target="_blank" rel="noopener noreferrer" className="text-hc-cyan hover:underline decoration-hc-cyan/50 underline-offset-4 transition-all">Request it on Slack</a>
-            </p>
           </div>
         </div>
         <Footer />
