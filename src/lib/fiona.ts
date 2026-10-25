@@ -45,6 +45,11 @@ export async function fionaWorkspace(slackId: string): Promise<string | null> {
   return row && (row.member || row.superadmin) ? row.id : null;
 }
 
+export async function fionaWorkspaceId(): Promise<string | null> {
+  const row = await db.query.ysws.findFirst({ where: eq(ysws.slug, env.FIONA_WORKSPACE), columns: { id: true } });
+  return row?.id ?? null;
+}
+
 // slack_id isn't unique: a row someone signed in with beats one fiona made
 export async function payloadUserId(slackId: string): Promise<string | null> {
   const [row] = await db

@@ -138,6 +138,13 @@ For each row, enqueue `terminate-vm` with reason `ttl`, `idle`, or `stuck`.
 Idempotency: every step must be safe to retry. Prefer "check current state, then
 act" over assuming a previous attempt left the world clean.
 
+Terminating mid-setup (Destroy, a fiona revoke, the reaper): step 1 flips the
+state and reads the row in one statement, and the setup jobs only move a row to
+`provisioning` or `ready` while it's still being set up. So either terminate
+gets the Guacamole ids a bind just wrote, or the bind deletes what it made and
+stops. A setup job that fails after the row is `terminated` leaves it that way
+instead of marking it `errored`.
+
 ## End-user controls
 
 - **Destroy button** -> `DELETE /api/sessions/:id` -> enqueue `terminate-vm`.

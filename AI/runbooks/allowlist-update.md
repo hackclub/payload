@@ -10,8 +10,22 @@ so a person can be added before their first login.
 2. On the **Members** tab, type the Slack ID (e.g. `U0123ABC`) and click
    "Add member". To remove, click the trash icon on their row.
 
-A workspace admin or a superadmin can do this. Removing a member does not
+A workspace admin or a superadmin can do this. Removing a member here does not
 terminate their running VMs; terminate them from the **Sessions** tab if needed.
+Plain members of fiona's workspace are managed from fiona, see below.
+
+## Members fiona manages (`FIONA_WORKSPACE`)
+
+fiona owns the plain members of `FIONA_WORKSPACE` (`shipwrights` unless set
+otherwise, ADR-0040). It adds someone when it approves their Payload access
+and removes them when that access is revoked, which also ends their VMs in
+that workspace (reason `revoked`). Give or revoke that access in fiona, not
+here: fiona doesn't re-sync, so a member added or removed here stays that way
+until fiona next decides something about them.
+
+fiona never touches admins, superadmins or other workspaces. It can't remove
+an admin either: the removal shows as failed in fiona until you demote or
+remove them here, then **Try again** in fiona finishes it.
 
 ## Promote or demote a workspace admin
 
@@ -49,6 +63,16 @@ To emergency-revoke a member and kill their VMs:
 DELETE FROM ysws_memberships WHERE slack_id = 'U0123ABC';
 ```
 
-```bash
-pnpm payload sessions:terminate-user U0123ABC --reason admin
+There's no CLI command to end their VMs, so terminate each one from the
+**Sessions** tab in `/admin`. To find them:
+
+```sql
+SELECT s.id, s.state, w.slug
+  FROM vm_sessions s
+  JOIN "user" u ON u.id = s.user_id
+  LEFT JOIN ysws w ON w.id = s.ysws_id
+ WHERE u.slack_id = 'U0123ABC'
+   AND s.state IN ('pending', 'provisioning', 'ready', 'active');
 ```
+
+In fiona's workspace, revoking their Payload access in fiona does both.

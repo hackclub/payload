@@ -937,7 +937,8 @@ already on their screen, so it never prevented anything.
 
 ## ADR-0039 - fiona starts VMs and shows them in its own window
 
-**Date:** 2026-10-20 | **Status:** Accepted.
+**Date:** 2026-10-20 | **Status:** Accepted. Its leaked-key consequence is
+amended by ADR-0040.
 
 Reviewers live in fiona (ds.shipwrights.dev). Sending them to
 payload.hackclub.com for every VM breaks their flow, so fiona gets a Payload
@@ -978,3 +979,72 @@ iframe to be same-origin with the page around it.
 - A minimized window keeps heartbeating, so its VM lives until the 6-hour cap
   like an open tab would.
 - `/guac` still has no framing policy of its own; its tokens stay the gate.
+
+---
+
+## ADR-0040 - fiona adds and removes members of its workspace
+
+**Date:** 2026-10-25 | **Status:** Accepted. Amends ADR-0039 (what a leaked
+FIONA_API_KEY can do).
+
+fiona v2.1 hands out Payload access itself. A Shipwright asks in fiona and is
+approved on the spot (or HQ gives it to them), and fiona takes it back when HQ
+revokes it, when they give it back, or when they're banned, delete their
+account or stop being a Shipwright. Mirroring each of those by hand in
+`/admin` is slow and easy to forget, and removing someone there leaves their
+VMs running.
+
+**Decision:**
+- `PUT /api/fiona/access` adds the person and `DELETE /api/fiona/access`
+  removes them. Both take `Authorization: Bearer FIONA_API_KEY` and
+  `X-Slack-Id` like the VM routes, but here `X-Slack-Id` is the person being
+  added or removed. No body; both are idempotent.
+- PUT inserts a plain `member` row in `FIONA_WORKSPACE` and answers
+  `{access, role, added}`. A row that's already there is left alone, so an
+  admin stays an admin.
+- DELETE removes the row only while its role is `member` and answers
+  `{access, removed, ended}`. An admin gets 409 `admin` and nothing changes.
+  A superadmin loses the plain row but keeps the tier and their VMs, so
+  `access` stays true.
+- Removal ends their live VMs in that workspace with reason `revoked`; VMs in
+  other workspaces stay. An open fiona window's embed grant lasts up to 6
+  hours and never re-checks membership, so deleting the row alone isn't
+  enough. The sweep runs on every DELETE, so a retry finishes a removal that
+  failed halfway.
+- The workspace is found by slug alone, so a disabled one still takes the
+  change (`access` is false while it's off). If it doesn't exist, both answer
+  503 `no_workspace` and fiona retries.
+- No user rows are created or deleted: memberships are keyed by Slack ID
+  (ADR-0036), and deleting a user would cascade away their VM history.
+- A VM started during a removal doesn't slip through: `POST /api/fiona/vms`
+  re-checks membership once the session exists and ends it with reason
+  `revoked` (403 `no_access`). A repo review checks before it launches its VM
+  and again once the VM exists, ending it the same way and failing the review.
+- Ending a VM that's still being set up (those re-checks do it right after a
+  warm claim) is safe: terminate and the setup jobs settle it on the row's
+  state, so no Guacamole login is left behind and the VM isn't marked ready
+  again (vm-lifecycle.md, Terminate).
+- The fiona window says "Your Payload access was revoked, so it was stopped."
+  for a VM ended this way.
+
+**Consequences:**
+- ADR-0039's leaked-key line no longer holds. Through `/api/fiona/access` a
+  leaked FIONA_API_KEY can add anyone as a plain member of `FIONA_WORKSPACE`
+  and remove plain members, which ends their VMs there. It can't change an
+  admin's row, the superadmin tier or another workspace's members. The
+  ADR-0039 VM routes reach further: they start, list and open VMs as anyone
+  with access, admins and superadmins included, and neither the list nor the
+  embed ticket checks which workspace a VM is in, so after a PUT the key can
+  open anyone's live VM in any workspace. `DELETE /api/fiona/vms/:id` needs no
+  membership, so it can destroy anyone's VMs in any workspace. Rotate it on
+  both sides.
+- fiona owns plain membership of `FIONA_WORKSPACE` but only acts on its own
+  decisions; it doesn't re-sync. A member added or removed by hand in
+  `/admin` stays that way until fiona next decides something about them, so
+  make those changes in fiona.
+- Payload doesn't log these calls; fiona's audit log has each one.
+- For the switch to v2.1, HQ removes the members it added by hand and they ask
+  again in fiona. fiona never removes in bulk.
+- If the workspace is deleted, its memberships cascade away and its VMs detach
+  (`ysws_id` set null), so later removals can't find those VMs, and fiona
+  won't add anyone back after it's recreated.

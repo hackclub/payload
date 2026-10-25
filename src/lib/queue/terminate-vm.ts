@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { vmSessions, vmSessionEvents } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { createProxmoxClient, getProxmoxConfig } from "@/lib/proxmox/config";
 import { createGuacamoleClient, getGuacamoleConfig } from "@/lib/guacamole/config";
 import { publish } from "@/lib/sse";
@@ -10,24 +10,28 @@ type TerminateJobData = { sessionId: number; reason: string };
 export async function processTerminateVm(jobData: TerminateJobData) {
   const { sessionId, reason } = jobData;
 
-  const session = await db.query.vmSessions.findFirst({
+  const existing = await db.query.vmSessions.findFirst({
     where: eq(vmSessions.id, sessionId),
+    columns: { state: true },
   });
 
-  if (!session) {
+  if (!existing) {
     throw new Error(`Session ${sessionId} not found`);
   }
 
-  if (session.state === "terminated") {
+  if (existing.state === "terminated") {
     return;
   }
 
-  if (session.state !== "terminating") {
-    await db
-      .update(vmSessions)
-      .set({ state: "terminating", updatedAt: new Date() })
-      .where(eq(vmSessions.id, sessionId));
+  // one statement, so a bind finishing alongside sees terminating and cleans up after itself
+  const [session] = await db
+    .update(vmSessions)
+    .set({ state: "terminating", updatedAt: new Date() })
+    .where(and(eq(vmSessions.id, sessionId), ne(vmSessions.state, "terminated")))
+    .returning();
+  if (!session) return;
 
+  if (existing.state !== "terminating") {
     publish({ type: "terminating", state: "terminating", sessionId });
   }
 

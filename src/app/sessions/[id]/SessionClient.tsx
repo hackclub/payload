@@ -39,6 +39,7 @@ export default function SessionClient({
 }: SessionClientProps) {
   const embedded = embedOrigins !== undefined;
   const [state, setState] = useState(initialState);
+  const [revoked, setRevoked] = useState(terminationReason === "revoked");
   // Server-rendered value is null while provisioning (TTL starts at claim);
   // SSE delivers the real expiry when the session becomes ready.
   const [expiresAt, setExpiresAt] = useState(initialExpiresAt);
@@ -219,6 +220,9 @@ export default function SessionClient({
         }
         if (typeof data.data?.expiresAt === "string") {
           setExpiresAt(data.data.expiresAt);
+        }
+        if (data.data?.reason === "revoked") {
+          setRevoked(true);
         }
         if (data.type === "terminated" || data.type === "errored" || data.state === "terminated" || data.state === "errored") {
           eventSource.close();
@@ -439,11 +443,13 @@ export default function SessionClient({
           <AlertTriangle className="w-10 h-10 text-hc-red mx-auto mb-4" />
           <p className="text-lg font-bold text-hc-snow mb-2">This VM has ended</p>
           <p className="text-hc-muted">
-            {state === "errored"
-              ? "It ran into an error and couldn't continue."
-              : terminationReason
-                ? `It was ended: ${terminationReason}`
-                : "You can close this window."}
+            {revoked
+              ? "Your Payload access was revoked, so it was stopped."
+              : state === "errored"
+                ? "It ran into an error and couldn't continue."
+                : terminationReason
+                  ? `It was ended: ${terminationReason}`
+                  : "You can close this window."}
           </p>
         </div>
       </div>

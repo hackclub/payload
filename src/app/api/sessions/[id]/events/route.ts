@@ -80,7 +80,10 @@ export async function GET(
         sessionId,
         // Lets a client that connected before the TTL clock started (cold
         // provisioning) pick up the expiry without a page refresh.
-        data: session.expiresAt ? { expiresAt: session.expiresAt.toISOString() } : undefined,
+        data: {
+          ...(session.expiresAt ? { expiresAt: session.expiresAt.toISOString() } : {}),
+          ...(session.terminationReason ? { reason: session.terminationReason } : {}),
+        },
       });
       initialSent = true;
 

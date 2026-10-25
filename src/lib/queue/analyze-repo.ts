@@ -1,14 +1,16 @@
 import { db } from "@/db";
-import { repoSetups, vmSessions } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { platformSuperadmins, repoSetups, users, vmSessions, ysws, yswsMemberships } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { cloneRepo, cleanupClone } from "@/lib/repo-setup/clone";
 import { buildRepoDigest } from "@/lib/repo-setup/digest";
 import { analyzeRepo } from "@/lib/repo-setup/agent";
 import { pruneTerminalRepoSetups } from "@/lib/repo-setup/history";
 import { createUserSession } from "@/lib/sessions";
-import { enqueueRunSetup } from "@/lib/queue";
+import { enqueueRunSetup, enqueueTerminateVm } from "@/lib/queue";
 
 export type AnalyzeRepoJobData = { setupId: number };
+
+const NO_ACCESS = "You no longer have access to the workspace this request was made in";
 
 /**
  * AI phase of "Review a Repo" (strictly sequential: AI first, VM after).
@@ -52,7 +54,12 @@ export async function processAnalyzeRepo(jobData: AnalyzeRepoJobData) {
     // bind phase notices the analyzed setup linked to this session and
     // enqueues run-setup once the VM is ready.
     if (!setup.yswsId) throw new Error("The workspace this request was made in no longer exists");
+    if (!(await canStillLaunch(setup.userId, setup.yswsId))) throw new Error(NO_ACCESS);
     const session = await createUserSession(setup.userId, "linux", setup.yswsId);
+    if (!(await canStillLaunch(setup.userId, setup.yswsId))) {
+      await enqueueTerminateVm({ sessionId: session.id, reason: "revoked" });
+      throw new Error(NO_ACCESS);
+    }
 
     await db
       .update(repoSetups)
@@ -85,4 +92,16 @@ async function setStatus(setupId: number, status: "analyzing") {
     .update(repoSetups)
     .set({ status, updatedAt: new Date() })
     .where(eq(repoSetups.id, setupId));
+}
+
+async function canStillLaunch(userId: string, yswsId: string) {
+  const [row] = await db
+    .select({ member: yswsMemberships.slackId, superadmin: platformSuperadmins.slackId })
+    .from(users)
+    .innerJoin(ysws, eq(ysws.id, yswsId))
+    .leftJoin(yswsMemberships, and(eq(yswsMemberships.yswsId, ysws.id), eq(yswsMemberships.slackId, users.slackId)))
+    .leftJoin(platformSuperadmins, eq(platformSuperadmins.slackId, users.slackId))
+    .where(and(eq(users.id, userId), eq(ysws.enabled, true)))
+    .limit(1);
+  return !!(row?.member || row?.superadmin);
 }

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { vmSessions, vmSessionEvents, vmTypes, users, repoSetups } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { createProxmoxClient, getProxmoxConfig } from "@/lib/proxmox/config";
 import { discoverIpFromProxmoxNeighborTable } from "@/lib/proxmox/ip-discovery";
 import { createGuacamoleClient, getGuacamoleConfig } from "@/lib/guacamole/config";
@@ -31,6 +31,13 @@ export class WarmVmUnhealthyError extends Error {
   }
 }
 
+class SessionEndedError extends Error {
+  constructor(sessionId: number) {
+    super(`Session ${sessionId} was ended while it was being set up`);
+    this.name = "SessionEndedError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Job processors (ADR-0033: provisioning splits into a warm phase and a bind
 // phase — see vm-lifecycle.md).
@@ -54,6 +61,7 @@ export async function processProvisionVm(jobData: ProvisionJobData) {
     await runWarmPhase(sessionId);
     await runBindPhase(sessionId);
   } catch (error) {
+    if (error instanceof SessionEndedError) return;
     await markErrored(sessionId, error, "provisioning");
     throw error;
   }
@@ -82,6 +90,7 @@ export async function processWarmVm(jobData: WarmJobData) {
       .where(eq(vmSessions.id, sessionId));
     await db.insert(vmSessionEvents).values({ vmSessionId: sessionId, kind: "warm_ready" });
   } catch (error) {
+    if (error instanceof SessionEndedError) return;
     await markErrored(sessionId, error, "warm");
     throw error;
   }
@@ -115,6 +124,7 @@ export async function processBindVm(jobData: BindJobData) {
       }
     }
   } catch (error) {
+    if (error instanceof SessionEndedError) return;
     await markErrored(sessionId, error, "bind");
     throw error;
   }
@@ -140,22 +150,19 @@ async function runWarmPhase(sessionId: number) {
   });
   if (!vmType) throw new Error(`VM type ${session.vmTypeId} not found`);
 
-  await db
+  const newVmid = await allocateVmid();
+
+  const [started] = await db
     .update(vmSessions)
-    .set({ state: "provisioning", updatedAt: new Date() })
-    .where(eq(vmSessions.id, sessionId));
+    .set({ state: "provisioning", proxmoxVmid: newVmid, proxmoxNode: vmType.proxmoxNode, updatedAt: new Date() })
+    .where(and(eq(vmSessions.id, sessionId), inArray(vmSessions.state, ["pending", "provisioning"])))
+    .returning({ id: vmSessions.id });
+  if (!started) throw new SessionEndedError(sessionId);
   publish({ type: "state_change", state: "provisioning", sessionId });
   await db.insert(vmSessionEvents).values({ vmSessionId: sessionId, kind: "clone_started" });
 
   const proxmoxConfig = getProxmoxConfig();
   const proxmox = createProxmoxClient(proxmoxConfig);
-
-  const newVmid = await allocateVmid();
-
-  await db
-    .update(vmSessions)
-    .set({ proxmoxVmid: newVmid, proxmoxNode: vmType.proxmoxNode, updatedAt: new Date() })
-    .where(eq(vmSessions.id, sessionId));
 
   const cloneUpid = await proxmox.cloneVm({
     node: vmType.proxmoxNode,
@@ -214,6 +221,7 @@ async function runBindPhase(sessionId: number) {
     where: eq(vmSessions.id, sessionId),
   });
   if (!session) throw new Error(`Session ${sessionId} not found`);
+  if (session.state !== "provisioning") throw new SessionEndedError(sessionId);
   if (!session.proxmoxVmid || !session.proxmoxNode) {
     throw new Error(`Session ${sessionId} has no VM to bind`);
   }
@@ -339,7 +347,7 @@ async function runBindPhase(sessionId: number) {
     // never restarted here at boot — the fallback only covers legacy rows that
     // reached ready without an expiry.
     const expiresAt = session.expiresAt ?? new Date(now.getTime() + SESSION_LIFETIME_MS);
-    await db
+    const [bound] = await db
       .update(vmSessions)
       .set({
         state: "ready",
@@ -352,7 +360,9 @@ async function runBindPhase(sessionId: number) {
         claimedAt: now,
         updatedAt: now,
       })
-      .where(eq(vmSessions.id, sessionId));
+      .where(and(eq(vmSessions.id, sessionId), eq(vmSessions.state, "provisioning")))
+      .returning({ id: vmSessions.id });
+    if (!bound) throw new SessionEndedError(sessionId);
 
     await db.insert(vmSessionEvents).values({
       vmSessionId: sessionId,
@@ -432,6 +442,7 @@ async function discardVm(sessionId: number, reason: string) {
     where: eq(vmSessions.id, sessionId),
   });
   if (!session) return;
+  if (session.state !== "provisioning") throw new SessionEndedError(sessionId);
 
   if (session.proxmoxVmid && session.proxmoxNode) {
     const proxmox = createProxmoxClient(getProxmoxConfig());
@@ -456,14 +467,16 @@ async function discardVm(sessionId: number, reason: string) {
 }
 
 async function markErrored(sessionId: number, error: unknown, phase: string) {
-  await db
+  const [row] = await db
     .update(vmSessions)
     // Release the VMID: an errored session must not keep squatting on a 69xxx
     // slot (the namespace is only 1000 wide). Any VM that was actually created
     // on Proxmox becomes an orphan and is reaped by sweepProxmoxVms(), which
     // enumerates Proxmox directly rather than relying on this row's vmid.
     .set({ state: "errored", proxmoxVmid: null, proxmoxNode: null, updatedAt: new Date() })
-    .where(eq(vmSessions.id, sessionId));
+    .where(and(eq(vmSessions.id, sessionId), ne(vmSessions.state, "terminated")))
+    .returning({ id: vmSessions.id });
+  if (!row) return;
   await db.insert(vmSessionEvents).values({
     vmSessionId: sessionId,
     kind: "errored",

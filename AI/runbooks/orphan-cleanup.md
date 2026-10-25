@@ -45,10 +45,13 @@ pnpm payload guac:delete-session-artifacts <session-id>
 
 ### C. Stuck in terminating
 
-Re-enqueue termination:
+Re-enqueue termination; the job picks up from `terminating`. There's no
+`pnpm payload` command for it and the **Sessions** tab in `/admin` refuses a
+terminating row, so add the job from the app container:
 
 ```bash
-pnpm payload sessions:terminate <session-id> --reason admin
+docker compose -f docker-compose.prod.yml exec app tsx -e \
+  'import("./src/lib/queue").then((q) => q.enqueueTerminateVm({ sessionId: <session-id>, reason: "admin" })).then(() => process.exit(0))'
 ```
 
 ## Notes

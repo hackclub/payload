@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { vmSessions, vmTypes } from "@/db/schema";
 import { ensurePayloadUser, fionaCaller, fionaError, fionaWorkspace, LIVE_STATES, payloadUserId } from "@/lib/fiona";
-import { MAX_SESSIONS_PER_USER } from "@/lib/queue";
+import { enqueueTerminateVm, MAX_SESSIONS_PER_USER } from "@/lib/queue";
 import { CapacityError, createUserSession, UserCapError, YswsCapError } from "@/lib/sessions";
 
 export async function GET(request: Request) {
@@ -71,6 +71,11 @@ export async function POST(request: Request) {
   const userId = await ensurePayloadUser(slackId, body.data.name ?? null, body.data.avatar ?? null);
   try {
     const vm = await createUserSession(userId, type.slug, workspaceId);
+    // fiona can revoke them while this starts
+    if (!(await fionaWorkspace(slackId))) {
+      await enqueueTerminateVm({ sessionId: vm.id, reason: "revoked" });
+      return fionaError(403, "no_access", "They can't start Payload VMs");
+    }
     return NextResponse.json(
       { id: vm.id, type: type.slug, name: type.displayName, state: vm.state, expiresAt: vm.expiresAt },
       { status: 201 },
